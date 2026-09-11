@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%231DA1F2'/%3E%3Crect x='10.5' y='3.6' width='9.6' height='7.3' rx='2.7' fill='none' stroke='%23fff' stroke-width='1.5' opacity='0.75'/%3E%3Cpath d='M3.4 12a3.7 3.7 0 0 1 3.7-3.7h6a3.7 3.7 0 0 1 3.7 3.7v2.3a3.7 3.7 0 0 1-3.7 3.7H9.5l-3.1 2.6c-.55.46-1.3.07-1.3-.64v-2.4A3.7 3.7 0 0 1 3.4 14.3z' fill='%23fff'/%3E%3Ccircle cx='7.4' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='10.25' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='13.1' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3C/svg%3E">
 <title>测试 · 智能交互平台</title>
-<link rel="stylesheet" href="./shared.css?v=13e2444d">
-<link rel="prefetch" href="./audit.html"><link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
+<link rel="stylesheet" href="./shared.css?v=11a7d9d0">
+<link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
 </head>
 <body class="has-side">
 <div class="page">
@@ -20,11 +20,11 @@
 
 <script>window.SIA_PLATFORM="router";</script>
 <script src="./mock_data.js?v=d70be8bd"></script>
-<script src="./mock_api.js?v=15b223ff"></script>
+<script src="./mock_api.js?v=11a7d9cf"></script>
 <script src="./tokens.js?v=360e29ec"></script>
 <script src="./ui.js?v=ff5d6dcf"></script>
 <script src="./components.js?v=2e39e148"></script>
-<script src="./testchat.js?v=31ecca27"></script>
+<script src="./testchat.js?v=11a7d9d2"></script>
 <script>
 const { el } = UI;
 const MODES = {
@@ -51,7 +51,7 @@ async function buildSuggestions(m) {
     { text: "帮我看看这段 SQL 为什么慢", label: "代码能力：看任务画像与打分" },
     { text: "帮我算下这单的毛利率再写一段分析", label: "复合任务：判出双维度" },
     { text: "识别这张图片里的集装箱箱号", label: "多模态：命中硬规则层" },
-    { text: "起草一份因台风停止装卸作业的客户通知", label: "研判写作：换个策略对比" },
+    { text: "起草一份因台风停止装卸作业的客户通知", label: "内容写作：换个策略对比" },
     { text: "按 JSON 格式逐条列出验收要点", label: "多步规划/工具调用" },
     { text: "你好，在吗", label: "闲聊：使用轻量回答模型" },
   ];
@@ -72,7 +72,7 @@ async function boot() {
     guideTitle: k === "comp" ? "试试这些会触发组件的问法" : "换一种策略，问同一个问题，对比路由决策",
     hint: k === "comp"
       ? "点击任意问法发送；命中触发条件时 AI 会插入对应的交互组件，可直接操作提交、也可从组件进入编辑"
-      : "下方可切换路由策略与聚合参数（模拟客户端的 aggregate 传参）；每次回答展示判维结果、打分过程、最终去向与本次成本。演示环境：模型与计价均为模拟",
+      : "下方可选择路由 API、路由策略，调整成本—效果偏好与聚合参数；回答后可展开完整、可复算的路由决策过程。演示环境：模型与计价均为模拟",
     keepReasoning: k === "model",
     editableCards: k === "comp",
   });

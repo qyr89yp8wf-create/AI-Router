@@ -6,7 +6,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%231DA1F2'/%3E%3Crect x='10.5' y='3.6' width='9.6' height='7.3' rx='2.7' fill='none' stroke='%23fff' stroke-width='1.5' opacity='0.75'/%3E%3Cpath d='M3.4 12a3.7 3.7 0 0 1 3.7-3.7h6a3.7 3.7 0 0 1 3.7 3.7v2.3a3.7 3.7 0 0 1-3.7 3.7H9.5l-3.1 2.6c-.55.46-1.3.07-1.3-.64v-2.4A3.7 3.7 0 0 1 3.4 14.3z' fill='%23fff'/%3E%3Ccircle cx='7.4' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='10.25' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='13.1' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3C/svg%3E">
 <title>首页 · 模型路由平台</title>
 <link rel="stylesheet" href="./shared.css?v=13e2444d">
-<link rel="prefetch" href="./audit.html"><link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
+<link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
 <style>
   .home { max-width: 900px; margin: 0 auto; padding-top: 6vh; text-align: center; }
   .home .mark { display: inline-flex; margin-bottom: 14px; }
@@ -89,15 +89,15 @@
     <div class="stage">
       <div class="cs">
         <div class="inner">
-          <span class="rq">你好，帮我查下今天的靠泊计划</span>
+          <span class="rq">帮我看看这段 SQL 为什么慢</span>
           <div class="mrow">
-            <div class="rm win"><span>迅答 Swift-4B</span><div class="mprice">¥0.1 / M</div><div class="sc"><i style="--w:88%"></i></div></div>
-            <div class="rm d2"><span>衡岳 Atlas-72B</span><div class="mprice">¥0.6 / M</div><div class="sc"><i style="--w:55%"></i></div></div>
-            <div class="rm d3"><span>沉思 Sage-R1</span><div class="mprice">¥1 / M</div><div class="sc"><i style="--w:34%"></i></div></div>
+            <div class="rm win"><span>迅答 Swift-4B</span><div class="mprice">代码能力 · 综合分 0.82</div><div class="sc"><i style="--w:88%"></i></div></div>
+            <div class="rm d2"><span>衡岳 Atlas-72B</span><div class="mprice">代码能力 · 综合分 0.74</div><div class="sc"><i style="--w:72%"></i></div></div>
+            <div class="rm d3"><span>沉思 Sage-R1</span><div class="mprice">代码能力 · 综合分 0.69</div><div class="sc"><i style="--w:64%"></i></div></div>
           </div>
-          <div class="ans">今天有三个泊位计划作业，预计 14:00 起密集靠泊……<div class="rc">单模型直答 · 迅答 Swift-4B · ¥0.0002 · 0.4s</div></div>
+          <div class="ans">建议先检查执行计划和索引命中情况，再定位全表扫描来源……<div class="rc">回答模型 · 迅答 Swift-4B · 310 Token · 780ms</div></div>
         </div>
-        <div class="cap"><b>单模型直答</b>简单问题走快车道，最合适的一个模型直接作答，省钱省时</div>
+        <div class="cap"><b>智能路由</b>路由器识别一个任务画像，结合质量分与便宜分选择综合分最高的回答模型</div>
       </div>
       <div class="cs">
         <div class="inner">
@@ -107,10 +107,10 @@
             <div class="rm d2 win"><span>沉思 Sage-R1</span><div class="mprice">¥1 / M</div><div class="sc"><i style="--w:84%"></i></div></div>
             <div class="rm d3 win"><span>曜极 Nova-X</span><div class="mprice">¥3 / M</div><div class="sc"><i style="--w:80%"></i></div></div>
           </div>
-          <div class="agg">两名得分接近 · 聚合定稿：由 沉思 Sage-R1 融合重写</div>
-          <div class="ans">近八周价格整体上行，建议关注供需两端边际变化……<div class="rc">聚合回答 · 2 路候选 · ¥0.0021 · 1.2s</div></div>
+          <div class="agg">聚合已开启 · 聚合能力得分第 1 名：曜极 Nova-X</div>
+          <div class="ans">近八周价格整体上行，建议关注供需两端边际变化……<div class="rc">聚合回答 · 2 路候选 · 1060 Token · 1.2s</div></div>
         </div>
-        <div class="cap"><b>聚合回答</b>难题让多个模型都答一遍，聚合器融合成更好的一份</div>
+        <div class="cap"><b>聚合回答</b>开启就聚合；再按本任务质量、知识问答、学术写作三个权重选择聚合模型</div>
       </div>
       <div class="cs">
         <div class="inner">
@@ -122,30 +122,30 @@
           <div class="agg" style="animation-delay:2.2s">故障自动切换 · 兜底模型接管</div>
           <div class="ans">本季度物流成本以运输与仓储为主，占比约七成……<div class="rc">兜底接管 · 衡岳 Atlas-72B · 用户无感切换</div></div>
         </div>
-        <div class="cap"><b>故障兜底</b>首选模型超时或出错时自动切默认兜底，回答不中断</div>
+        <div class="cap"><b>智能路由兜底</b>智能路由的候选模型不可用时调用兜底模型；手动路由不配置兜底模型</div>
       </div>
       <div class="cs">
         <div class="inner">
           <div class="mrow" style="top:36px">
-            <div class="rm wa" style="width:190px"><span>迅答 Swift-4B</span><div class="mprice">便宜 · ¥0.1 / M · 得分 0.65</div></div>
-            <div class="rm wb" style="width:190px"><span>沉思 Sage-R1</span><div class="mprice">更准 · ¥1 / M · 得分 0.84</div></div>
+            <div class="rm wa" style="width:190px"><span>省钱挡位</span><div class="mprice">便宜分权重更高</div></div>
+            <div class="rm wb" style="width:190px"><span>质量挡位</span><div class="mprice">质量分权重更高</div></div>
           </div>
           <div class="wtrack"><div class="wfill"></div><div class="wthumb"></div></div>
           <span class="wlab l">更省钱</span><span class="wlab r">更高质量</span>
         </div>
-        <div class="cap"><b>成本-效果权重</b>拖动策略的权重，路由在省钱与高质之间自动换挡</div>
+        <div class="cap"><b>成本-效果偏好</b>策略允许时，终端用户可在固定挡位间切换；否则使用管理员设定的固定权重</div>
       </div>
       <div class="cs">
         <div class="inner">
-          <span class="rq">帮我算下这单的毛利率，再写一段分析</span>
+          <span class="rq">用迅答 Swift-4B 回答，不要聚合</span>
           <div class="mrow">
-            <div class="rm win" style="width:190px"><span>智能路由模型判维</span><div class="mprice">相关维度：数学推理 + 长文写作</div></div>
-            <div class="rm d2" style="width:190px"><span>沉思 Sage-R1 直答</span><div class="mprice">两维平均得分 × 成本，综合分领先</div></div>
+            <div class="rm win" style="width:190px"><span>终端用户指定</span><div class="mprice">回答模型：迅答 Swift-4B</div></div>
+            <div class="rm d2" style="width:190px"><span>聚合参数</span><div class="mprice">本次关闭聚合</div></div>
           </div>
-          <div class="agg" style="animation-delay:2.4s">得分缺失或与业务不符？画像页点格修正，即改即生效</div>
-          <div class="ans">画像 = benchmark 得分表 + 成本，零冷启动<div class="rc">智能判维 · 判定相关维度 → 平均得分 × 权重 → 路由</div></div>
+          <div class="agg" style="animation-delay:2.4s">候选范围校验通过 · 不进行任务画像识别和智能评分</div>
+          <div class="ans">已按终端用户指定的模型完成回答。<div class="rc">手动路由 · 回答模型：迅答 Swift-4B · 不聚合</div></div>
         </div>
-        <div class="cap"><b>智能判维路由</b>路由模型判定问题相关的 benchmark 维度，按维度平均得分选模型</div>
+        <div class="cap"><b>手动路由</b>终端用户从候选范围中指定回答模型；策略允许时，也可以自行选择是否聚合</div>
       </div>
       <div class="dots"><button class="dot on" aria-label="case 1"></button><button class="dot" aria-label="case 2"></button><button class="dot" aria-label="case 3"></button><button class="dot" aria-label="case 4"></button><button class="dot" aria-label="case 5"></button></div>
     </div>

@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%231DA1F2'/%3E%3Crect x='10.5' y='3.6' width='9.6' height='7.3' rx='2.7' fill='none' stroke='%23fff' stroke-width='1.5' opacity='0.75'/%3E%3Cpath d='M3.4 12a3.7 3.7 0 0 1 3.7-3.7h6a3.7 3.7 0 0 1 3.7 3.7v2.3a3.7 3.7 0 0 1-3.7 3.7H9.5l-3.1 2.6c-.55.46-1.3.07-1.3-.64v-2.4A3.7 3.7 0 0 1 3.4 14.3z' fill='%23fff'/%3E%3Ccircle cx='7.4' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='10.25' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='13.1' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3C/svg%3E">
 <title>模型路由 · 智能交互平台</title>
-<link rel="stylesheet" href="./shared.css?v=13e2444f">
-<link rel="prefetch" href="./audit.html"><link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
+<link rel="stylesheet" href="./shared.css?v=13e24454">
+<link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
 </head>
 <body class="has-side">
 <div class="page">
@@ -17,7 +17,7 @@
 
 <script>window.SIA_PLATFORM="router";</script>
 <script src="./mock_data.js?v=d70be8bd"></script>
-<script src="./mock_api.js?v=15b223ff"></script>
+<script src="./mock_api.js?v=15b22403"></script>
 <script src="./tokens.js?v=360e29ed"></script>
 <script src="./ui.js?v=ff5d6dcf"></script>
 <script src="./components.js?v=2e39e148"></script>
@@ -402,12 +402,12 @@ function policyForm(init, actives, policyId, apiKey) {
   const aggInit=init.aggregation_weights||{};
   const st={name:init.name||"",route_type:init.route_type||"smart",whitelist:new Set(init.whitelist||[]),fallback:init.fallback||"",router_model:init.router_model||"",
     domain_weight:init.domain_weight??0.5,allow_agg:init.allow_agg!==false,default_aggregation:init.default_aggregation==="on"?"on":"off",
-    agg_task:aggInit.task??0.6,agg_reasoning:aggInit.reasoning??0.2,agg_judgment:aggInit.judgment??0.2,
+    aggregation_model_mode:init.aggregation_model_mode==="fixed"?"fixed":"smart",aggregator_model:init.aggregator_model||"",
+    agg_task:aggInit.task??0.6,agg_knowledge:aggInit.knowledge??aggInit.reasoning??0.2,agg_judgment:aggInit.judgment??0.2,
     allow_cost_preference:init.allow_cost_preference!==false,alpha:init.alpha??0.5};
   st.alpha=COST_EFFECT_LEVELS.reduce((best,item)=>Math.abs(item[0]-st.alpha)<Math.abs(best[0]-st.alpha)?item:best,COST_EFFECT_LEVELS[0])[0];
   if(st.whitelist.size===0)actives.forEach(m=>st.whitelist.add(m.model_id));
-  const recommendedRouter=cheapestRouterModel(actives);
-  if(!st.router_model||!actives.some(m=>m.model_id===st.router_model))st.router_model=recommendedRouter?.model_id||"";
+  if(st.router_model&&!actives.some(m=>m.model_id===st.router_model))st.router_model="";
   const nameIn=el("input",{type:"text",maxlength:"15",value:st.name,placeholder:"例如：金融分析策略（1-15 字）"});
   const nameErr=el("div",{class:"field-error"});
   nameIn.oninput=()=>{st.name=nameIn.value;nameErr.textContent="";};
@@ -431,7 +431,7 @@ function policyForm(init, actives, policyId, apiKey) {
     const marks=el("div",{style:"display:grid;grid-template-columns:repeat(5,minmax(62px,1fr));gap:4px;margin:8px 34px 0;text-align:center"},COST_EFFECT_LEVELS.map(([value,label])=>el("div",{},[el("div",{class:"num",style:"font-weight:600"},[String(value)]),el("div",{class:"muted",style:"font-size:var(--font-caption);line-height:1.35"},[label])])));
     return el("div",{},[el("div",{style:"display:flex;align-items:center;gap:10px"},[el("span",{class:"muted",style:"flex:none"},["更省钱"]),inp,el("span",{class:"muted",style:"flex:none"},["更高质量"]),val]),marks]);
   };
-  const behaviorBox=el("div",{});
+  const behaviorBox=el("div",{}),aggregationBox=el("div",{});
   const weightInput=(label,key,onInput)=>{const input=el("input",{type:"number",min:"0",max:"1",step:"0.05",value:String(st[key])});input.oninput=()=>{st[key]=input.value===""?0:Number(input.value);onInput();};return el("label",{class:"field"},[el("span",{class:"label-text"},[label]),input]);};
   const defaultAggregationField=()=>el("label",{class:"field"},[
     el("span",{class:"label-text req"},["默认回答方式",UI.help("终端用户未传 aggregate 参数或传 auto 时采用；终端用户仍可按次选择聚合或不聚合")]),
@@ -439,63 +439,56 @@ function policyForm(init, actives, policyId, apiKey) {
   ]);
   const drawBehavior=()=>{
     behaviorBox.innerHTML="";
+    aggregationBox.innerHTML="";
     behaviorBox.appendChild(el("div",{class:"form-sec"},[st.route_type==="smart"?"智能路由参数":"手动路由参数"]));
     if(st.route_type==="manual"){
-      behaviorBox.appendChild(el("div",{class:"field"},[
+      behaviorBox.appendChild(el("div",{class:"route-type-note",style:"margin-bottom:16px"},["回答模型由终端用户从候选模型范围内自行指定。"]));
+      const manualAggregation=el("div",{},[el("div",{class:"field"},[
         el("span",{class:"label-text"},["是否允许聚合"]),
         UI.toggle({checked:st.allow_agg,label:st.allow_agg?"允许聚合":"不允许聚合",onChange:v=>{st.allow_agg=v;if(!v)st.default_aggregation="off";setTimeout(drawBehavior,0);return true;}}),
         el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px;line-height:1.7"},[st.allow_agg?"开启后，允许终端用户自行配置回答模型和聚合模型，并可按次切换是否聚合。":"关闭后，终端用户仅可自行配置回答模型，不可使用聚合模型。"]),
-      ]));
-      if(st.allow_agg)behaviorBox.appendChild(defaultAggregationField());
+      ])]);
+      if(st.allow_agg)manualAggregation.appendChild(defaultAggregationField());
+      aggregationBox.appendChild(manualAggregation);
       return;
     }
-    const routerSel=UI.fancySelect({value:st.router_model,width:"100%",options:actives.map(m=>[m.model_id,`${withCap(m)}${m.model_id===recommendedRouter?.model_id?"（系统推荐 · 最便宜）":""}`]),onChange:v=>st.router_model=v});
+    const routerSel=UI.fancySelect({value:st.router_model,width:"100%",options:[["","请选择路由器模型"],...actives.map(m=>[m.model_id,withCap(m)])],onChange:v=>st.router_model=v});
     behaviorBox.appendChild(el("label",{class:"field"},[
       el("span",{class:"label-text req"},["路由器模型",UI.help("用于识别请求的任务类型和专业领域，不直接回答用户问题")]),routerSel,
-      el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px"},[recommendedRouter?`系统默认推荐成本最低的模型：${withCap(recommendedRouter)}`:"暂无可选模型"]),
     ]));
     behaviorBox.appendChild(el("label",{class:"field"},[
-      el("span",{class:"label-text"},["专业领域能力权重",UI.help("识别出专业领域时，任务质量按（1 - 权重）× 通用任务能力 + 权重 × 专业领域匹配度计算；文档建议默认 0.50")]),
+      el("span",{class:"label-text"},["专业领域能力权重",UI.help("识别出专业领域时，任务质量按（1 - 权重）× 通用任务能力 + 权重 × 专业领域匹配度计算；默认建议 0.50")]),
       slider("domain_weight","通用任务能力","专业领域能力"),
     ]));
-    behaviorBox.appendChild(el("div",{class:"field"},[
-      el("span",{class:"label-text"},["是否允许聚合",UI.help("开启后可并行调用多个回答模型，再由聚合模型生成最终答案")]),
-      UI.toggle({checked:st.allow_agg,label:st.allow_agg?"允许聚合":"不允许聚合",onChange:v=>{st.allow_agg=v;if(!v)st.default_aggregation="off";setTimeout(drawBehavior,0);return true;}}),
-    ]));
+    const costCard=el("div",{class:`cost-preference-card ${st.allow_cost_preference?"adjustable":"fixed"}`},[el("div",{class:"cost-preference-head"},[el("div",{},[el("div",{style:"font-weight:700"},["成本—效果偏好"]),el("div",{class:"muted"},["决定该策略更偏向低成本还是高质量。"])]),el("span",{class:`chip ${st.allow_cost_preference?"blue":"yellow"}`},[st.allow_cost_preference?"终端可调":"策略固定"])]),el("div",{class:"field"},[el("span",{class:"label-text"},["是否允许终端用户调整"]),UI.toggle({checked:st.allow_cost_preference,label:st.allow_cost_preference?"允许调整":"禁止调整",onChange:v=>{st.allow_cost_preference=v;setTimeout(drawBehavior,0);return true;}})]),el("div",{class:"cost-mode-callout"},[el("div",{style:"font-weight:700"},[st.allow_cost_preference?"这是终端用户的初始挡位":"这是策略强制执行的固定权重"]),el("div",{class:"muted",style:"margin-top:3px"},[st.allow_cost_preference?"终端用户进入时采用此值，之后可以按需切换挡位。":"终端用户不可修改，所有请求始终使用下面设置的权重。"])]),el("label",{class:"field"},[el("span",{class:"label-text"},[st.allow_cost_preference?"终端默认挡位":"策略固定权重",UI.help("综合分 = α × 效果分 + (1 - α) × 便宜分；便宜分越高表示越便宜，因此 α=0 只看成本，α=1 只看效果")]),costEffectSlider()])]);
+    behaviorBox.appendChild(costCard);
+    const aggregationCard=el("div",{},[el("div",{class:"field"},[el("span",{class:"label-text"},["是否允许聚合",UI.help("开启后可并行调用多个回答模型，再由聚合模型生成最终答案")]),UI.toggle({checked:st.allow_agg,label:st.allow_agg?"允许聚合":"不允许聚合",onChange:v=>{st.allow_agg=v;if(!v)st.default_aggregation="off";setTimeout(drawBehavior,0);return true;}})])]);
     if(st.allow_agg){
-      behaviorBox.appendChild(defaultAggregationField());
+      aggregationCard.appendChild(defaultAggregationField());
+      aggregationCard.appendChild(el("label",{class:"field"},[el("span",{class:"label-text req"},["聚合模型选择方式"]),UI.fancySelect({value:st.aggregation_model_mode,width:"100%",options:[["smart","智能选择聚合模型"],["fixed","指定一个聚合模型"]],onChange:v=>{st.aggregation_model_mode=v;setTimeout(drawBehavior,0);}})]));
+      if(st.aggregation_model_mode==="fixed")aggregationCard.appendChild(el("label",{class:"field"},[el("span",{class:"label-text req"},["指定聚合模型"]),UI.fancySelect({value:st.aggregator_model,width:"100%",options:[["","请选择聚合模型"],...actives.map(m=>[m.model_id,withCap(m)])],onChange:v=>st.aggregator_model=v})]));
+      if(st.aggregation_model_mode==="smart"){
       const sumText=el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:-4px"});
-      const refreshSum=()=>{const sum=st.agg_task+st.agg_reasoning+st.agg_judgment;sumText.textContent=`聚合能力权重合计 ${sum.toFixed(2)}，必须等于 1.00`;sumText.style.color=Math.abs(sum-1)<0.001?"var(--text-muted)":"var(--danger)";};
-      behaviorBox.appendChild(el("div",{class:"field"},[
-        el("span",{class:"label-text"},["聚合路由能力权重",UI.help("用于选择聚合模型；文档默认：当前任务质量 0.60、复杂推理 0.20、研判写作 0.20")]),
-        el("div",{class:"grid cols-3"},[weightInput("当前任务质量","agg_task",refreshSum),weightInput("复杂推理","agg_reasoning",refreshSum),weightInput("研判写作","agg_judgment",refreshSum)]),sumText,
-      ]));refreshSum();
+      const refreshSum=()=>{const sum=st.agg_task+st.agg_knowledge+st.agg_judgment;sumText.textContent="聚合能力权重合计必须等于 1.00";sumText.style.color=Math.abs(sum-1)<0.001?"var(--text-muted)":"var(--danger)";};
+      aggregationCard.appendChild(el("div",{class:"field"},[
+        el("span",{class:"label-text"},["聚合路由能力权重",UI.help("用于选择聚合模型；默认：当前任务质量 0.60、知识问答 0.20、学术写作 0.20")]),
+        el("div",{class:"grid cols-3"},[weightInput("当前任务质量","agg_task",refreshSum),weightInput("知识问答","agg_knowledge",refreshSum),weightInput("学术写作","agg_judgment",refreshSum)]),sumText,
+      ]));refreshSum();}
     }
-    behaviorBox.appendChild(el("div",{class:"field"},[
-      el("span",{class:"label-text"},["是否允许成本—效果偏好配置",UI.help("开启后终端用户可覆盖偏好，下面配置未指定时采用的初始默认值；关闭后下面的权重固定生效")]),
-      UI.toggle({checked:st.allow_cost_preference,label:st.allow_cost_preference?"允许终端用户配置":"使用固定权重",onChange:v=>{st.allow_cost_preference=v;setTimeout(drawBehavior,0);return true;}}),
-      st.allow_cost_preference?el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px"},["终端用户可自行切换初始成本-效果的挡位。"]):null,
-    ]));
-    behaviorBox.appendChild(el("label",{class:"field"},[
-      el("span",{class:"label-text"},[st.allow_cost_preference?"初始成本—效果偏好":"固定成本—效果权重",UI.help("综合分 = α × 效果分 + (1 - α) × 便宜分；便宜分越高表示越便宜，因此 α=0 只看成本，α=1 只看效果")]),
-      costEffectSlider(),
-    ]));
+    aggregationBox.appendChild(aggregationCard);
   };
-  const typeHint=el("div",{class:"muted",hidden:st.route_type!=="manual",style:"font-size:var(--font-caption);margin-top:6px"},["允许终端用户自行配置回答模型"]);
+  const typeHint=el("div",{class:"route-type-note",style:"margin-top:8px"},[st.route_type==="manual"?"终端用户自行指定回答模型；允许聚合时，也可指定聚合模型。":"系统根据模型画像、专业领域和成本—效果偏好选择回答模型。"]);
   const fallbackField=el("label",{class:"field",hidden:st.route_type==="manual"},[el("span",{class:"label-text req"},["兜底模型",UI.help("候选模型调用失败或配置无效时，用它保底回答")]),fbSel]);
-  const typeSel=UI.fancySelect({value:st.route_type,width:"100%",options:[["smart","智能路由"],["manual","手动路由"]],onChange:v=>{st.route_type=v;typeHint.hidden=v!=="manual";fallbackField.hidden=v==="manual";drawBehavior();}});
+  const typeSel=UI.fancySelect({value:st.route_type,width:"100%",options:[["smart","智能路由"],["manual","手动路由"]],onChange:v=>{st.route_type=v;typeHint.textContent=v==="manual"?"终端用户自行指定回答模型；允许聚合时，也可指定聚合模型。":"系统根据模型画像、专业领域和成本—效果偏好选择回答模型。";fallbackField.hidden=v==="manual";drawBehavior();}});
   const node=el("div",{class:"policy-form"},[
     policyId?el("div",{class:"drawer-meta"},[
       el("span",{},["策略 ID"]),el("span",{class:"cr-id num",title:"点击复制完整 ID",style:"cursor:pointer",onclick:()=>{navigator.clipboard.writeText(policyId);UI.toast("已复制策略 ID");}},[shortPolicyId(policyId)]),
       apiKey?el("span",{},["API Key"]):null,apiKey?el("button",{class:"key-chip",title:"点击复制完整 Key",onclick:()=>{navigator.clipboard.writeText(apiKey);UI.toast("已复制 API Key");}},[el("span",{class:"num"},["sk-route-••••"+apiKey.slice(-4)]),UI.icon("copy",12)]):null,
     ]):null,
-    policyId&&apiKey?buildApiDoc(policyId,apiKey,st):null,
-    el("label",{class:"field"},[el("span",{class:"label-text req"},["策略名称"]),nameIn,nameErr]),
-    el("label",{class:"field"},[el("span",{class:"label-text req"},["路由类型"]),typeSel,typeHint]),
-    el("div",{class:"form-sec"},["模型范围"]),
-    el("div",{class:"field"},[el("span",{class:"label-text req"},["候选模型",UI.help("该策略允许使用的模型范围；手动路由的终端用户选项也受此范围限制")]),wlWrap]),
-    fallbackField,
-    behaviorBox,
+    el("section",{class:"policy-section"},[el("div",{class:"policy-section-head"},[el("span",{class:"policy-step"},["01"]),el("div",{},[el("div",{class:"policy-section-title"},["策略定义"]),el("div",{class:"muted"},["命名策略并确定由系统智能选择，还是由终端用户手动指定。"] )])]),el("label",{class:"field"},[el("span",{class:"label-text req"},["策略名称"]),nameIn,nameErr]),el("label",{class:"field"},[el("span",{class:"label-text req"},["路由类型"]),typeSel,typeHint])]),
+    el("section",{class:"policy-section"},[el("div",{class:"policy-section-head"},[el("span",{class:"policy-step"},["02"]),el("div",{},[el("div",{class:"policy-section-title"},["模型范围"]),el("div",{class:"muted"},["限定本策略可以调度的候选模型和异常兜底。"] )])]),el("div",{class:"field"},[el("span",{class:"label-text req"},["候选模型",UI.help("该策略允许使用的模型范围；手动路由的终端用户选项也受此范围限制")]),wlWrap]),fallbackField]),
+    el("section",{class:"policy-section"},[el("div",{class:"policy-section-head"},[el("span",{class:"policy-step"},["03"]),el("div",{},[el("div",{class:"policy-section-title"},["路由行为"]),el("div",{class:"muted"},["配置路由判定与成本—效果偏好。"] )])]),behaviorBox]),
+    el("section",{class:"policy-section"},[el("div",{class:"policy-section-head"},[el("span",{class:"policy-step"},["04"]),el("div",{},[el("div",{class:"policy-section-title"},["聚合行为"]),el("div",{class:"muted"},["控制是否聚合，以及如何选择聚合模型。"] )])]),aggregationBox]),
   ]);
   drawBehavior();
   return{node,st,nameIn,nameErr};
@@ -508,22 +501,23 @@ function validatePolicyConfig(st){
   if(!st.router_model)return"请选择路由器模型";
   if(st.domain_weight<0||st.domain_weight>1)return"专业领域能力权重需在 0 到 1 之间";
   if(!COST_EFFECT_LEVELS.some(([value])=>value===st.alpha))return"成本—效果偏好必须选择 0、0.2、0.5、0.8 或 1";
-  if(st.allow_agg){const ws=[st.agg_task,st.agg_reasoning,st.agg_judgment];if(ws.some(v=>v<0||v>1)||Math.abs(ws.reduce((a,b)=>a+b,0)-1)>=0.001)return"聚合路由能力权重均需在 0 到 1 之间，且合计必须等于 1.00";}
+  if(st.allow_agg&&st.aggregation_model_mode==="fixed"&&!st.aggregator_model)return"请选择指定聚合模型";
+  if(st.allow_agg&&st.aggregation_model_mode==="smart"){const ws=[st.agg_task,st.agg_knowledge,st.agg_judgment];if(ws.some(v=>v<0||v>1)||Math.abs(ws.reduce((a,b)=>a+b,0)-1)>=0.001)return"聚合路由能力权重均需在 0 到 1 之间，且合计必须等于 1.00";}
   return"";
 }
 
 function policyPayload(st,actives){
   const params={route_type:st.route_type,default_aggregation:st.allow_agg?st.default_aggregation:"off"};
-  if(st.route_type==="smart")Object.assign(params,{fallback_model:st.fallback,router_model:st.router_model,alpha:st.alpha,beta:st.domain_weight,professional_domain_weight:st.domain_weight,allow_cost_effect_preference:!!st.allow_cost_preference,aggregation_weights:{task:st.agg_task,reasoning:st.agg_reasoning,judgment:st.agg_judgment}});
+  if(st.route_type==="smart")Object.assign(params,{fallback_model:st.fallback,router_model:st.router_model,alpha:st.alpha,beta:st.domain_weight,professional_domain_weight:st.domain_weight,allow_cost_effect_preference:!!st.allow_cost_preference,aggregation_model_mode:st.aggregation_model_mode,aggregator_model:st.aggregation_model_mode==="fixed"?st.aggregator_model:null,aggregation_weights:{task:st.agg_task,knowledge:st.agg_knowledge,judgment:st.agg_judgment}});
   return{name:st.name.trim(),route_type:st.route_type,params,allow_aggregation:st.allow_agg?1:0,model_whitelist:st.whitelist.size===actives.length?[]:[...st.whitelist]};
 }
 
 
-async function newPolicyDialog(actives) {
+async function newPolicyDialog(actives, routeApi=null) {
   if (!actives.length) { UI.toast("请先在「模型接入」里接入模型", true); return; }
   const form = policyForm({}, actives);
   const err = el("div", { class: "field-error" });
-  const mask2 = UI.modal("新增路由策略", el("div", {}, [form.node, err,
+  const mask2 = UI.modal(routeApi?`为「${routeApi.name}」新增策略`:"新增路由策略", el("div", {}, [form.node, err,
     el("div", { style: "display:flex;justify-content:flex-end;gap:8px;margin-top:12px" }, [
       el("button", { class: "btn", onclick: () => mask2.remove() }, ["取消"]),
       el("button", { class: "btn primary", onclick: async (e) => {
@@ -531,9 +525,10 @@ async function newPolicyDialog(actives) {
         const invalid=validatePolicyConfig(form.st);if(invalid){err.textContent=invalid;return;}
         await UI.withBusy(e.currentTarget, async () => {
           try {
-            const body=policyPayload(form.st,actives);
+            const body={...policyPayload(form.st,actives),route_api_id:routeApi?.route_api_id,api_key:routeApi?.api_key};
             const r = await UI.api("/v1/policies", { method: "POST", body });
             mask2.remove(); renderDispatch();
+            if(routeApi){UI.toast("路由策略已添加");return;}
             const keyField = el("input", { type: "text", readonly: "", value: r.api_key,
               style: "font-family:var(--font-mono);width:100%" });
             const km = UI.modal("策略已创建", el("div", {}, [
@@ -555,7 +550,7 @@ async function editPolicy(p, actives) {
   const prm = p.params || {};
   const form = policyForm({name:p.name,route_type:p.route_type||prm.route_type||"smart",router_model:prm.router_model||"",alpha:prm.alpha??0.5,domain_weight:prm.professional_domain_weight??prm.beta??0.5,
     allow_agg:!!p.allow_aggregation,allow_cost_preference:prm.allow_cost_effect_preference!==false,
-    default_aggregation:prm.default_aggregation||"off",aggregation_weights:prm.aggregation_weights||{},whitelist:p.model_whitelist||[],fallback:prm.fallback_model||p.fallback_model||""},actives,p.policy_id,p.api_key);
+    default_aggregation:prm.default_aggregation||"off",aggregation_model_mode:prm.aggregation_model_mode||"smart",aggregator_model:prm.aggregator_model||"",aggregation_weights:prm.aggregation_weights||{},whitelist:p.model_whitelist||[],fallback:prm.fallback_model||p.fallback_model||""},actives,p.policy_id,p.api_key);
   const err = el("div", { class: "field-error" });
   const foot = el("div", { style: "display:flex;gap:8px;justify-content:flex-end;align-items:center;width:100%" }, [
     err, el("div", { style: "flex:1" }),
@@ -575,6 +570,7 @@ async function editPolicy(p, actives) {
     } }, ["保存应用"]),
   ]);
   const mask2 = UI.drawer("参数配置", form.node, foot);
+  mask2.querySelector(".drawer")?.classList.add("policy-drawer");
 }
 
 async function renderPolicies(container, policies, actives) {
@@ -638,8 +634,8 @@ async function renderPolicies(container, policies, actives) {
           const defaultAgg=prm.default_aggregation==="on"?"默认聚合":"默认不聚合";
           if(routeType==="manual")return `候选模型 ${wlN} 个 · ${p.allow_aggregation?`终端用户可配置回答模型和聚合模型 · ${defaultAgg}`:"终端用户仅可配置回答模型"}`;
           const costLabel=prm.allow_cost_effect_preference===false?`固定成本—效果权重 ${prm.alpha??0.5}`:`成本—效果偏好默认 ${prm.alpha??0.5}（终端可调）`;
-          const agg=prm.aggregation_weights||{task:0.6,reasoning:0.2,judgment:0.2};
-          return `候选模型 ${wlN} 个 · 路由器 ${prm.router_model?nameOfM(prm.router_model):"未配置"} · 专业领域权重 ${prm.professional_domain_weight??prm.beta??0.5} · ${costLabel} · ${p.allow_aggregation?`允许聚合 · ${defaultAgg}（${agg.task}/${agg.reasoning}/${agg.judgment}）`:"不聚合"} · 兜底 ${fb?nameOfM(fb):"-"}`;
+          const agg=prm.aggregation_weights||{task:0.6,knowledge:0.2,judgment:0.2};
+          return `候选模型 ${wlN} 个 · 路由器 ${prm.router_model?nameOfM(prm.router_model):"未配置"} · 专业领域权重 ${prm.professional_domain_weight??prm.beta??0.5} · ${costLabel} · ${p.allow_aggregation?`允许聚合 · ${defaultAgg}（${agg.task}/${agg.knowledge??agg.reasoning}/${agg.judgment}）`:"不聚合"} · 兜底 ${fb?nameOfM(fb):"-"}`;
         })(),
       ]),
     ]);
@@ -650,6 +646,39 @@ async function renderPolicies(container, policies, actives) {
 function shortPolicyId(pid) {
   const hex = String(pid).replace(/[^0-9a-f]/gi, "").slice(0, 8) || "0";
   return String(parseInt(hex, 16) % 1000000).padStart(6, "0");
+}
+
+// 路由 API 是对外接入单元：一个 API Key 下可以组合多条路由策略。
+const routeApiLocal=[];
+const defaultRouteApi={route_api_id:"route-api-default",name:"默认路由 API",api_key:"sk-route-default2026",system_preset:true};
+const deletedRouteApis=new Set();
+const routeApiExpanded=new Set(["route-api-default"]);
+function routeApiKey(){return "sk-route-"+Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,10);}
+function showRouteApiKeyModal(api,title="路由 API 已创建",message="API Key 仅用于这套路由组合，请妥善保存。接下来可在卡片中添加多条策略。"){
+  const key=el("input",{value:api.api_key,readonly:true,style:"font-family:var(--font-mono);width:100%"});
+  const done=UI.modal(title,el("div",{},[el("div",{class:"muted",style:"margin-bottom:10px"},[message]),el("div",{style:"display:flex;gap:8px"},[key,el("button",{class:"btn",onclick:()=>{navigator.clipboard.writeText(api.api_key);UI.toast("已复制 API Key");}},["复制"])]),el("div",{style:"display:flex;justify-content:flex-end;margin-top:16px"},[el("button",{class:"btn primary",onclick:()=>done.remove()},["完成"])])]))
+}
+function newRouteApiDialog(actives){
+  const name=el("input",{type:"text",maxlength:"20",placeholder:"例如：客服生产路由 API"}),err=el("div",{class:"field-error"});
+  const mask=UI.modal("新增路由 API",el("div",{},[
+    el("div",{class:"route-api-create-intro"},[el("div",{class:"route-api-create-icon"},[UI.icon("route2",20)]),el("div",{},[el("div",{style:"font-weight:700"},["先创建调用凭证，再组合路由策略"]),el("div",{class:"muted",style:"margin-top:3px"},["每个 API Key 独立管理一套路由组合，可按不同业务或环境隔离使用。"] )])]),
+    el("label",{class:"field"},[el("span",{class:"label-text req"},["路由 API 名称"]),name]),err,
+    el("div",{style:"display:flex;justify-content:flex-end;gap:8px;margin-top:18px"},[el("button",{class:"btn",onclick:()=>mask.remove()},["取消"]),el("button",{class:"btn primary",onclick:()=>{const value=name.value.trim();if(!value){err.textContent="请填写路由 API 名称";name.focus();return;}const api={route_api_id:`route-api-${Date.now().toString(36)}`,name:value,api_key:routeApiKey(),created_at:Date.now()};routeApiLocal.push(api);routeApiExpanded.add(api.route_api_id);mask.remove();renderDispatch();setTimeout(()=>showRouteApiKeyModal(api),0);}},["创建 API Key"])])
+  ]),null,{persistent:true});setTimeout(()=>name.focus(),80);
+}
+function renameRouteApiDialog(api){const input=el("input",{type:"text",maxlength:"20",value:api.name,placeholder:"请输入路由 API 名称"}),err=el("div",{class:"field-error"});const mask=UI.modal("修改路由 API 名称",el("div",{},[el("label",{class:"field"},[el("span",{class:"label-text req"},["路由 API 名称"]),input]),err,el("div",{style:"display:flex;justify-content:flex-end;gap:8px;margin-top:16px"},[el("button",{class:"btn",onclick:()=>mask.remove()},["取消"]),el("button",{class:"btn primary",onclick:()=>{const name=input.value.trim();if(!name){err.textContent="请输入路由 API 名称";return;}api.name=name;mask.remove();renderDispatch();UI.toast("路由 API 名称已更新");}},["保存"] )])]),null,{persistent:true});setTimeout(()=>{input.focus();input.select();},80);}
+function routePolicySummary(p,actives){const prm=p.params||{},manual=(p.route_type||prm.route_type)==="manual",count=(p.model_whitelist||[]).length||actives.length,cost=prm.allow_cost_effect_preference!==false?"允许配置成本—效果偏好":"不允许配置成本—效果偏好";if(manual)return `${count} 个候选模型 · ${p.allow_aggregation?"允许终端用户配置聚合":"仅配置回答模型"} · ${cost}`;const router=actives.find(m=>m.model_id===prm.router_model);const agg=!p.allow_aggregation?"不聚合":prm.aggregation_model_mode==="fixed"?`指定聚合模型：${(actives.find(m=>m.model_id===prm.aggregator_model)||{}).display_name||prm.aggregator_model||"未配置"}`:"智能选择聚合模型";return `${count} 个候选模型 · 路由器：${router?.display_name||prm.router_model||"未配置"} · ${agg} · ${cost}`;}
+function renderRouteApis(container,policies,actives){
+  const apis=[defaultRouteApi,...routeApiLocal].filter(api=>!deletedRouteApis.has(api.route_api_id));
+  policies.forEach(p=>{if(p.route_api_id&&!deletedRouteApis.has(p.route_api_id)&&!apis.some(a=>a.route_api_id===p.route_api_id))apis.push({route_api_id:p.route_api_id,name:p.route_api_name||"自定义路由 API",api_key:p.api_key});});
+  apis.forEach(api=>{const children=policies.filter(p=>(p.route_api_id||"route-api-default")===api.route_api_id),open=routeApiExpanded.has(api.route_api_id);const body=el("div",{class:"route-api-body",hidden:!open});
+    children.forEach(p=>{const prm=p.params||{},type=p.route_type||prm.route_type||"smart";const more=el("button",{class:"btn small",title:"更多","aria-label":"策略更多操作"},["更多"]);more.onclick=e=>{e.stopPropagation();UI.menu(more,[{label:"复制策略",onClick:async()=>{await UI.api(`/v1/policies/${p.policy_id}/duplicate`,{method:"POST"});UI.toast("策略已复制");renderDispatch();}},{label:"删除策略",danger:true,onClick:async()=>{if(await UI.confirm("删除策略",`确定删除「${p.name}」？`,{okText:"删除",danger:true})){await UI.api(`/v1/policies/${p.policy_id}/delete`,{method:"POST"});renderDispatch();}}}]);};body.appendChild(el("div",{class:"route-policy-row"},[el("div",{class:"route-policy-mark"},[UI.icon(type==="manual"?"user":"wand",15)]),el("div",{class:"route-policy-main"},[el("div",{class:"route-policy-title"},[p.name||"未命名策略",el("span",{class:type==="manual"?"chip gray":"chip blue"},[type==="manual"?"手动路由":"智能路由"])]),el("div",{class:"muted route-policy-summary"},[routePolicySummary(p,actives)])]),el("button",{class:"btn small",onclick:()=>editPolicy(p,actives)},[UI.icon("sliders",13),"参数配置"]),more]));});
+    if(!children.length)body.appendChild(el("div",{class:"route-api-empty"},[el("div",{style:"font-weight:600"},["还没有路由策略"]),el("div",{class:"muted"},["添加智能或手动策略，组成这个 API Key 的路由能力。"]),el("button",{class:"btn primary small",onclick:()=>newPolicyDialog(actives,api)},[UI.icon("plus",13),"添加第一条策略"])]));
+    const toggle=()=>{open?routeApiExpanded.delete(api.route_api_id):routeApiExpanded.add(api.route_api_id);renderDispatch();};const keyButton=el("button",{class:"key-chip",title:"点击复制完整 API Key",onclick:e=>{e.stopPropagation();navigator.clipboard.writeText(api.api_key);UI.toast("已复制 API Key");}},[el("span",{class:"num"},[`sk-route-••••${api.api_key.slice(-4)}`]),UI.icon("copy",12)]);
+    const apiMore=el("button",{class:"btn small",title:"更多","aria-label":"API 更多操作",onclick:e=>{e.stopPropagation();UI.menu(apiMore,[{label:"重命名",onClick:()=>renameRouteApiDialog(api)},{label:"重置 API Key",danger:true,onClick:async()=>{if(!await UI.confirm("重置 API Key","旧 Key 将立即失效，调用方需要更新为新 Key。",{okText:"确认重置",danger:true}))return;api.api_key=routeApiKey();children.forEach(p=>p.api_key=api.api_key);renderDispatch();setTimeout(()=>showRouteApiKeyModal(api,"API Key 已重置","新的 API Key 仅展示这一次，请立即复制并更新调用方配置；旧 Key 已失效。"),0);}},{label:"删除路由 API",danger:true,onClick:async()=>{if(!await UI.confirm("删除路由 API",`将同时删除其中 ${children.length} 条策略，且无法恢复。`,{okText:"删除",danger:true}))return;for(const p of children)await UI.api(`/v1/policies/${p.policy_id}/delete`,{method:"POST"});deletedRouteApis.add(api.route_api_id);const i=routeApiLocal.indexOf(api);if(i>=0)routeApiLocal.splice(i,1);renderDispatch();}}]);}},["更多"]);
+    const idButton=el("button",{class:"key-chip",title:"点击复制完整路由 API ID",onclick:e=>{e.stopPropagation();navigator.clipboard.writeText(api.route_api_id);UI.toast("已复制路由 API ID");}},[el("span",{class:"num"},[`API ID：${api.route_api_id}`]),UI.icon("copy",12)]);
+    container.appendChild(el("article",{class:"route-api-card"},[el("div",{class:"route-api-head",onclick:toggle},[el("button",{class:`route-api-chevron ${open?"open":""}`,"aria-label":open?"收起":"展开"},[UI.icon("chevron",14)]),el("div",{class:"route-api-identity"},[el("div",{class:"route-api-name"},[api.name]),el("div",{class:"route-api-meta"},[idButton,keyButton,el("span",{class:"muted"},[`${children.length} 条策略`])])]),el("div",{style:"flex:1"}),el("button",{class:"btn small",onclick:e=>{e.stopPropagation();newPolicyDialog(actives,api);}},[UI.icon("plus",13),"添加策略"]),apiMore]),body]));
+  });
 }
 
 // ================= 模型画像（得分表 → 判维路由 → 效果换算）=================
@@ -1028,51 +1057,34 @@ async function renderDispatch() {
     return;
   }
 
-  const rulesBlock = el("div", { class: "card explain-body", hidden: true, style: "margin-bottom:10px" }, [
-    el("p", {}, ["1. 路由类型：智能路由由系统根据模型画像、专业领域和成本—效果偏好自动选模型；手动路由由终端用户从策略候选范围内指定回答模型，策略允许聚合时还可指定聚合模型。"]),
-    el("p", {}, ["2. 智能路由：先按输入能力执行硬过滤，再识别任务类型与专业领域；专业领域权重用于修正任务质量，随后按成本—效果权重计算综合分。未配置智能路由模型时直接使用兜底模型。"]),
-    el("p", {}, ["3. 聚合路由：开启允许聚合后需设置默认聚合或默认不聚合；智能路由按聚合能力权重选择聚合模型，手动路由由终端用户配置回答模型和聚合模型。终端用户未指定时采用策略默认回答方式。"]),
-    el("p", {}, ["4. 兜底：智能路由的候选模型全部失败或判定无有效结果时切换兜底模型；手动路由不配置兜底模型，终端用户指定的回答模型调用失败时直接报错。"]),
-    el("p", {}, ["5. 成本—效果偏好：允许配置时，策略权重作为终端用户未指定偏好时的初始默认值；关闭配置时，该权重固定生效。0 只看成本，0.5 均衡，1 只看效果。"]),
-  ]);  const rulesBtn = el("button", { class: "btn small ghost", onclick: () => {
-    rulesBlock.hidden = !rulesBlock.hidden;
-    rulesBtn.classList.toggle("active", !rulesBlock.hidden);
-  } }, ["模型路由规则", UI.icon("chevron", 13)]);
-  document.getElementById("headActions").appendChild(rulesBtn);
   box.appendChild(el("div", { style: "display:flex;align-items:center;gap:8px;margin:6px 0 10px" }, [
-    el("span", { class: "muted" }, ["一条策略 = 一个 API，用 Key 区分"]),
+    el("div", {}, [el("div", { style:"font-weight:700;font-size:var(--font-title)" }, ["路由 API"]),el("div", { class: "muted",style:"margin-top:3px" }, ["一个 API Key 对应一套路由组合，可在同一个 Key 下配置多条智能或手动策略。"])]),
     el("div", { style: "flex:1" }),
-    el("button", { class: "btn primary", onclick: () => newPolicyDialog(actives) }, [UI.icon("plus", 14), "新增路由策略"]),
+    el("button", { class: "btn primary", onclick: () => newRouteApiDialog(actives) }, [UI.icon("plus", 14), "新增路由 API"]),
   ]));
-  // 三层路由一行式示意：让首次用户不点「模型路由规则」也能看懂路由怎么走
-  box.appendChild(el("div", { class: "card", style: "margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px" }, [
-    el("span", { class: "muted", style: "flex:none" }, ["智能路由："]),
-    el("span", { class: "chip blue", title: "多模态等功能需求按能力分流；日常闲聊轻量直答" }, ["1 硬规则"]),
-    el("span", { class: "muted" }, ["→"]),
-    el("span", { class: "chip blue", title: "智能路由模型判定问题相关的 benchmark 维度，按维度平均得分与成本选模型；综合分接近可聚合" }, ["2 智能判维"]),
-    el("span", { class: "muted" }, ["→"]),
-    el("span", { class: "chip blue", title: "判定维度全部缺分或调用异常时，兜底模型直连" }, ["3 else 兜底"]),
-    el("span", { class: "muted", style: "margin-left:4px" }, ["详细规则见右上角「模型路由规则」"]),
-    el("span",{style:"flex-basis:100%;height:0"},[]),
-    el("span",{class:"muted",style:"flex:none"},["手动路由："]),
-    el("span",{class:"chip gray"},["终端用户选回答模型"]),el("span",{class:"muted"},["→"]),el("span",{class:"chip gray"},["可选聚合模型"]),el("span",{class:"muted"},["→"]),el("span",{class:"chip gray"},["失败则报错"]),
-  ]));
-  box.appendChild(rulesBlock);
   const listBox = el("div", {});
   box.appendChild(listBox);
-  renderPolicies(listBox, policies, actives);
+  renderRouteApis(listBox, policies, actives);
 
 }
 // v8 节点级模型接入：画像配置统一移至「模型画像」页。
-const nodeMeta = m => { const c = m.capabilities || {}; return {
-  // 旧演示数据没有 node_id：按 API 提供平台归入同一节点，确保多模型节点可直接演示展开/收起。
-  node_id: c.node_id || `legacy-provider-${m.provider || m.model_id}`, node_name: c.node_name || `${m.provider || "默认"} API 节点`,
-  model_series: c.model_series || m.model_name || m.model_id, model_brand: c.model_brand || m.provider,
-  api_protocol: c.api_protocol || "OpenAI", api_type: c.api_type || (!c.node_id && String(m.provider).toLowerCase()==="mocklab" ? "private" : (m.deploy_type === "self_hosted" ? "private" : "public"))
-}; };
+const nodeMeta = m => { const c = m.capabilities || {};
+  const apiType = c.api_type || (!c.node_id && String(m.provider).toLowerCase()==="mocklab" ? "private" : (m.deploy_type === "self_hosted" ? "private" : "public"));
+  const apiName = c.api_name || c.node_name || `${m.provider || "默认"} API`;
+  return {
+    node_id: c.api_id || c.node_id || `legacy-provider-${m.provider || m.model_id}`,
+    node_name: apiName, api_name: apiName,
+    source_type: c.source_type || (apiType === "private" ? "internal" : "official"),
+    model_series: c.model_series || m.model_name || m.model_id, model_brand: c.model_brand || m.provider,
+    api_protocol: c.api_protocol || "OpenAI", api_type: apiType
+  };
+};
 const billingTypeLabel = type => type === "private" ? "内部固定资源" : type === "package" ? "按固定套餐计费" : "按使用量计费";
+const sourceTypeLabel = type => type === "third_party" ? "第三方" : type === "internal" ? "内部自有" : "模型品牌官方";
 const expandedModelNodes = new Set();
 let modelNodeSearch = "";
+let modelConnectionSort = { key: "model_name", direction: "asc" };
+const modelConnectionFilters = { api_name: "", provider: "", model_series: "", model_brand: "" };
 async function renderModelNodes() {
   const { models } = await UI.api("/v1/models");
   const box = content(); box.innerHTML = "";
@@ -1129,6 +1141,251 @@ async function renderModelNodes() {
 function modelNodeDialog(group=null,copying=false){if(document.querySelector(".modal-mask"))return;const first=group?.[0],meta=first?nodeMeta(first):{};const st={node_id:copying||!first?`node-${Date.now().toString(36)}`:meta.node_id,node_name:copying?`${meta.node_name} 副本`:(meta.node_name||""),provider:first?.provider||"",model_names:group?group.map(m=>m.model_name||m.model_id):[""],model_series:meta.model_series||"",model_brand:meta.model_brand||"",endpoint:first?.endpoint||"",api_key:"",api_protocol:"OpenAI",api_type:meta.api_type||"public"};const err=el("div",{class:"field-error"});const field=(label,key,ph,type="text",hint="")=>{const n=el("input",{type,value:st[key]||"",placeholder:ph});n.oninput=()=>st[key]=n.value.trim();return el("label",{class:"field"},[el("span",{class:"label-text req"},[label,hint?UI.help(hint):null]),n]);};const namesBox=el("div",{class:"form-loose"});const drawNames=()=>{namesBox.innerHTML="";st.model_names.forEach((v,i)=>{const n=el("input",{type:"text",value:v,placeholder:"例如：claude-sonnet-4.5",style:"flex:1"});n.oninput=()=>st.model_names[i]=n.value.trim();namesBox.appendChild(el("div",{style:"display:flex;gap:8px;align-items:center"},[n,el("button",{class:"btn small ghost",type:"button",disabled:st.model_names.length===1,onclick:()=>{st.model_names.splice(i,1);drawNames();}},["移除"])]));});};drawNames();const typeSel=UI.fancySelect({value:st.api_type,width:"100%",options:[["public","按使用量计费"],["package","按固定套餐计费"],["private","内部固定资源"]],onChange:v=>st.api_type=v});const save=el("button",{class:"btn primary",onclick:async e=>{err.textContent="";const names=[...new Set(st.model_names.map(x=>x.trim()).filter(Boolean))];if(!st.node_name)return err.textContent="请填写节点名称";if(!st.provider)return err.textContent="请填写 API 提供平台";if(!names.length)return err.textContent="请至少填写一个模型名称";if(!st.model_series||!st.model_brand)return err.textContent="请填写模型系列和模型品牌";if(!/^https:\/\/\S+$/.test(st.endpoint))return err.textContent="Base URL 必须是 https:// 开头的完整地址";if((!first||copying)&&!st.api_key)return err.textContent="请填写 API Key";await UI.withBusy(e.currentTarget,async()=>{try{const payload={...st,model_names:names};if(first&&!copying)await UI.api(`/v1/model-nodes/${encodeURIComponent(st.node_id)}`,{method:"PUT",body:payload});else await UI.api("/v1/model-nodes",{method:"POST",body:payload});UI.toast(first&&!copying?"节点已更新":`节点已保存，共添加 ${names.length} 个模型`);mask.remove();renderModelNodes();}catch(ex){err.textContent=ex.data?.error||ex.message;}},"保存中……");}},[first&&!copying?"保存修改":"保存节点"]);const body=el("div",{class:"form-loose"},[el("div",{class:"sec-head"},["1. 基本信息"]),el("div",{class:"grid cols-2"},[field("节点名称","node_name","例如：Claude 生产节点","text","同一套 API 接入配置的名称"),field("API 提供平台","provider","例如：Anthropic / Azure / 自研")]),el("div",{class:"grid cols-2"},[field("模型系列","model_series","例如：Claude Sonnet 4"),field("模型品牌","model_brand","例如：Anthropic")]),el("div",{class:"field"},[el("span",{class:"label-text req"},["模型名称",UI.help("可添加多个；保存后每个模型在列表中占一行")]),namesBox,el("button",{class:"btn small ghost",type:"button",style:"margin-top:8px",onclick:()=>{st.model_names.push("");drawNames();}},[UI.icon("plus",13),"添加模型名称"])]),el("div",{class:"sec-head",style:"margin-top:8px"},["2. API 接入信息"]),field("Base URL","endpoint","https://api.provider.com/v1","url","暂不进行连接测试"),field("API Key","api_key",first&&!copying?"留空则保持原 Key":"sk-...","password","保存后仅显示掩码"),el("div",{class:"grid cols-2"},[el("label",{class:"field"},[el("span",{class:"label-text req"},["API 协议",UI.help("使用默认 OpenAI 协议，不可修改")]),el("input",{type:"text",value:"OpenAI",readonly:true,"aria-readonly":"true"})]),el("label",{class:"field"},[el("span",{class:"label-text req"},["计费类型"]),typeSel])]),el("div",{class:"muted"},["此处只保存接入信息，不测试连接。模型画像在下一步单独配置。"]),err,el("div",{style:"display:flex;justify-content:flex-end;gap:8px"},[el("button",{class:"btn",onclick:()=>mask.remove()},["取消"]),save])]);const mask=UI.modal(copying?"复制节点":(first?"编辑节点":"添加节点"),body,null,{persistent:true});}
 async function deleteModelNode(group){const x=nodeMeta(group[0]);const ok=await UI.confirm("删除节点",`确定删除节点「${x.node_name}」及其 ${group.length} 个模型？历史调用记录会保留。`,{okText:"删除节点",danger:true});if(!ok)return;try{await UI.api(`/v1/model-nodes/${encodeURIComponent(x.node_id)}/delete`,{method:"POST",body:{model_ids:group.map(m=>m.model_id)}});UI.toast("节点已删除");renderModelNodes();}catch(e){UI.toast(e.data?.error||e.message,true);}}
 
+// 当前模型接入：API 配置可承载多个“系列－品牌－模型名称”分组，列表始终按模型名称逐行展示。
+const modelConnectivity = {};
+let modelConnectivityBatchBusy = false;
+const connectivityView = m => {
+  const state = modelConnectivity[m.model_id] || { status: "untested" };
+  if (state.status === "testing") return el("span", { class: "connectivity-testing", title: "正在重新校验该模型" }, [UI.icon("refresh", 14), "校验中"]);
+  if (state.status === "connected") return el("span", { class: "chip green", title: state.checked_at ? `最近校验：${state.checked_at}` : "" }, ["连接成功"]);
+  if (state.status === "failed") return el("span", { class: "chip red", title: state.message || "连接失败" }, ["连接失败"]);
+  return el("span", { class: "chip gray" }, ["未测试"]);
+};
+
+async function runModelConnectivityTest(modelId, refresh = true) {
+  modelConnectivity[modelId] = { status: "testing" };
+  if (refresh) await renderModelConnections();
+  await new Promise(resolve => setTimeout(resolve, 650));
+  try {
+    const result = await UI.api(`/v1/models/${encodeURIComponent(modelId)}/connectivity-test`, { method: "POST" });
+    if (result && result.ok !== false) {
+      modelConnectivity[modelId] = { status: "connected", checked_at: new Date().toLocaleTimeString("zh-CN", { hour12: false }) };
+      return true;
+    }
+    modelConnectivity[modelId] = { status: "failed", message: result?.error || "连接失败" };
+    return false;
+  } catch (error) {
+    modelConnectivity[modelId] = { status: "failed", message: error.data?.error || error.message };
+    return false;
+  } finally {
+    if (refresh) await renderModelConnections();
+  }
+}
+
+async function runModelConnectivityBatch(modelIds, source = "batch") {
+  const ids = [...new Set(modelIds || [])];
+  if (!ids.length) return;
+  const failed = [];
+  for (const id of ids) {
+    const ok = await runModelConnectivityTest(id, true);
+    if (!ok) failed.push(id);
+  }
+  if (failed.length) UI.toast(`连通性测试完成：${ids.length - failed.length} 个成功，${failed.length} 个失败`, true);
+  else UI.toast(source === "save" ? `模型保存成功，${ids.length} 个模型连通性测试通过` : `批量测试完成，${ids.length} 个模型连接成功`);
+}
+
+async function deleteConnectedModel(model) {
+  const ok = await UI.confirm("删除模型", `确定删除模型「${model.model_name || model.model_id}」？历史调用记录会保留。`, { okText: "删除模型", danger: true });
+  if (!ok) return;
+  try {
+    await UI.api(`/v1/models/${encodeURIComponent(model.model_id)}/delete`, { method: "POST" });
+    delete modelConnectivity[model.model_id];
+    UI.toast("模型已删除");
+    renderModelConnections();
+  } catch (error) {
+    UI.toast(error.data?.error || error.message, true);
+  }
+}
+
+async function renderModelConnections() {
+  const { models } = await UI.api("/v1/models");
+  const box = content();
+  box.innerHTML = "";
+  const allModels = models || [];
+  const query = modelNodeSearch.trim().toLowerCase();
+  const columnValue = (model, key) => { const meta=nodeMeta(model);return String(key==="model_name"?(model.model_name||model.model_id):key==="api_name"?meta.api_name:key==="provider"?(model.provider||"-"):key==="model_series"?meta.model_series:meta.model_brand); };
+  const list = allModels.filter(m => {
+    const meta = nodeMeta(m);
+    return (!query || `${m.model_name || ""} ${meta.api_name} ${m.provider || ""} ${meta.model_series} ${meta.model_brand}`.toLowerCase().includes(query))&&Object.entries(modelConnectionFilters).every(([key,value])=>!value||columnValue(m,key)===value);
+  });
+  if(modelConnectionSort.key)list.sort((a,b)=>columnValue(a,modelConnectionSort.key).localeCompare(columnValue(b,modelConnectionSort.key),"zh-CN")*(modelConnectionSort.direction==="asc"?1:-1));
+  const groupFor = model => {
+    const apiId = nodeMeta(model).node_id;
+    return allModels.filter(item => nodeMeta(item).node_id === apiId);
+  };
+  const tableRows = list.map(model => {
+    const meta = nodeMeta(model);
+    const more = el("button", { class: "btn small", "aria-label": "更多操作" }, ["更多"]);
+    more.onclick = () => UI.menu(more, [
+      { label: "测试连通性", onClick: () => runModelConnectivityTest(model.model_id) },
+      { label: "删除模型", danger: true, onClick: () => deleteConnectedModel(model) },
+    ]);
+    const actionSticky="position:sticky;right:0;background:var(--bg-elevated);border-left:1px solid var(--border);box-shadow:-6px 0 8px -8px rgba(15,23,42,.45)";
+    return el("tr", {}, [
+      el("td", { class: "num", style: "font-weight:600;white-space:nowrap" }, [model.model_name || model.model_id]),
+      el("td", {}, [meta.model_series || "-"]),
+      el("td", {}, [meta.model_brand || "-"]),
+      el("td", { style: "font-weight:600;white-space:nowrap" }, [meta.api_name]),
+      el("td", {}, [model.provider || "-"]),
+      el("td", {}, [sourceTypeLabel(meta.source_type)]),
+      el("td", {}, [billingTypeLabel(meta.api_type)]),
+      el("td", { class: "num", title: model.endpoint || "", style: "max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, [model.endpoint || "-"]),
+      el("td", { style: "white-space:nowrap" }, [connectivityView(model)]),
+      el("td", {style:`${actionSticky};z-index:4`}, [el("div", { class: "row-actions" }, [
+        el("button", { class: "btn small", onclick: () => modelApiDialog(groupFor(model)) }, ["编辑"]), more,
+      ])]),
+    ]);
+  });
+  if (!tableRows.length) tableRows.push(el("tr", {}, [el("td", { colspan: "10", class: "muted", style: "text-align:center;padding:28px" }, [query ? "没有匹配的模型" : "暂无模型"])]));
+  const filterHeader=(label,key)=>{const values=[...new Set(allModels.map(m=>columnValue(m,key)))].sort((a,b)=>a.localeCompare(b,"zh-CN")),active=modelConnectionSort.key===key,arrow=active?(modelConnectionSort.direction==="asc"?"↑":"↓"):"↕";const sort=el("button",{type:"button",title:`按${label}排序`,style:`display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:${active?"var(--primary)":"inherit"};font:inherit;font-weight:600;cursor:pointer`,onclick:()=>{modelConnectionSort=active?{key,direction:modelConnectionSort.direction==="asc"?"desc":"asc"}:{key,direction:"asc"};renderModelConnections();}},[label,el("span",{style:"font-size:12px"},[arrow])]);let filter;filter=el("button",{type:"button",title:`筛选${label}`,"aria-label":`筛选${label}`,style:`display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;background:transparent;color:${modelConnectionFilters[key]?"var(--primary)":"var(--text-muted)"};cursor:pointer`,onclick:e=>{e.stopPropagation();UI.menu(filter,[{label:`${!modelConnectionFilters[key]?"✓ ":""}全部`,onClick:()=>{modelConnectionFilters[key]="";renderModelConnections();}},...values.map(value=>({label:`${modelConnectionFilters[key]===value?"✓ ":""}${value}`,onClick:()=>{modelConnectionFilters[key]=value;renderModelConnections();}}))]);}},[UI.icon("chevron",11)]);return el("th",{style:"white-space:nowrap"},[el("div",{style:"display:flex;align-items:center;gap:3px"},[sort,filter])]);};
+  const actionSticky="position:sticky;right:0;background:var(--bg-elevated);border-left:1px solid var(--border);box-shadow:-6px 0 8px -8px rgba(15,23,42,.45)";
+  const table = el("table", { class: "data" }, [
+    el("thead", {}, [el("tr", {}, [el("th",{style:"white-space:nowrap"},["模型名称"]),filterHeader("模型系列","model_series"),filterHeader("模型品牌","model_brand"),filterHeader("API 名称","api_name"),filterHeader("API 提供平台","provider"),... ["来源类型","计费类型","Base URL","连通性"].map(label=>el("th",{style:"white-space:nowrap"},[label])),el("th",{style:`${actionSticky};z-index:8;white-space:nowrap`},["操作"])])]),
+    el("tbody", {}, tableRows),
+  ]);
+  const search = el("input", { type: "text", value: modelNodeSearch, placeholder: "搜索模型名称、API 名称、API 提供平台或模型品牌", style: "width:340px;max-width:100%" });
+  search.onkeydown = event => { if (event.key === "Enter") { modelNodeSearch = search.value.trim(); renderModelConnections(); } };
+  const batchButton = el("button", { class: "btn", disabled: modelConnectivityBatchBusy, onclick: async () => {
+    if (modelConnectivityBatchBusy) return;
+    modelConnectivityBatchBusy = true;
+    await renderModelConnections();
+    try { await runModelConnectivityBatch(allModels.map(m => m.model_id)); }
+    finally { modelConnectivityBatchBusy = false; await renderModelConnections(); }
+  } }, [UI.icon("refresh", 14), modelConnectivityBatchBusy ? "批量测试中…" : "批量测试连通性"]);
+  box.appendChild(el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px" }, [
+    el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, [search, el("button", { class: "btn", onclick: () => { modelNodeSearch = search.value.trim(); renderModelConnections(); } }, ["搜索"])]),
+    el("div", { style: "display:flex;align-items:center;gap:8px" }, [batchButton,
+      el("button", { class: "btn primary", onclick: () => modelApiDialog() }, [UI.icon("plus", 14), "添加模型"]),
+    ]),
+  ]));
+  box.appendChild(el("div", { class: "card" }, [
+    el("div", { style: "margin-bottom:10px" }, [
+      el("div", { class: "section-title", style: "margin:0" }, ["模型列表"]),
+    ]), el("div",{class:"model-table-scroll"},[table]),
+  ]));
+}
+
+function modelApiDialog(group = null) {
+  if (document.querySelector(".modal-mask")) return;
+  const editing = !!(group && group.length);
+  const first = editing ? group[0] : null;
+  const meta = first ? nodeMeta(first) : {};
+  const groupedSeries = new Map();
+  (group || []).forEach(model => {
+    const current = nodeMeta(model);
+    const key = `${current.model_series}\u0000${current.model_brand}`;
+    if (!groupedSeries.has(key)) groupedSeries.set(key, { model_series: current.model_series, model_brand: current.model_brand, model_names: [] });
+    groupedSeries.get(key).model_names.push(model.model_name || model.model_id);
+  });
+  const st = {
+    api_id: editing ? meta.node_id : `api-${Date.now().toString(36)}`,
+    api_name: editing ? meta.api_name : "",
+    provider: first?.provider || "",
+    source_type: meta.source_type || "official",
+    api_type: meta.api_type || "public",
+    endpoint: first?.endpoint || "",
+    api_key: "",
+    api_protocol: "OpenAI",
+    series_groups: groupedSeries.size ? [...groupedSeries.values()] : [{ model_series: "", model_brand: "", model_names: [""] }],
+  };
+  const err = el("div", { class: "field-error" });
+  const field = (label, key, placeholder, type = "text", hint = "") => {
+    const input = el("input", { type, value: st[key] || "", placeholder });
+    input.oninput = () => st[key] = input.value.trim();
+    return el("label", { class: "field" }, [el("span", { class: "label-text req" }, [label, hint ? UI.help(hint) : null]), input]);
+  };
+  const sourceSelect = UI.fancySelect({ value: st.source_type, width: "100%", options: [["official", "模型品牌官方"], ["third_party", "第三方"], ["internal", "内部自有"]], onChange: value => st.source_type = value });
+  const billingSelect = UI.fancySelect({ value: st.api_type, width: "100%", options: [["public", "按使用量计费"], ["package", "按固定套餐计费"], ["private", "内部固定资源"]], onChange: value => st.api_type = value });
+  const seriesBox = el("div", { class: "model-series-list" });
+  const drawSeries = () => {
+    seriesBox.innerHTML = "";
+    st.series_groups.forEach((series, seriesIndex) => {
+      const namesBox = el("div", { class: "model-name-list" });
+      const drawNames = () => {
+        namesBox.innerHTML = "";
+        series.model_names.forEach((name, nameIndex) => {
+          const input = el("input", { type: "text", value: name, placeholder: "例如：qwen3-32b", style: "flex:1" });
+          input.oninput = () => series.model_names[nameIndex] = input.value.trim();
+          namesBox.appendChild(el("div", { style: "display:flex;gap:8px;align-items:center" }, [input,
+            el("button", { class: "btn small ghost", type: "button", disabled: series.model_names.length === 1, onclick: () => { series.model_names.splice(nameIndex, 1); drawNames(); } }, ["移除"]),
+          ]));
+        });
+      };
+      drawNames();
+      const seriesInput = el("input", { type: "text", value: series.model_series, placeholder: "例如：Qwen3" });
+      seriesInput.oninput = () => series.model_series = seriesInput.value.trim();
+      const brandInput = el("input", { type: "text", value: series.model_brand, placeholder: "例如：Qwen" });
+      brandInput.oninput = () => series.model_brand = brandInput.value.trim();
+      seriesBox.appendChild(el("div", { class: "model-series-card" }, [
+        el("div", { style: "display:flex;align-items:center;gap:8px;margin-bottom:8px" }, [
+          el("span", { style: "font-weight:600" }, [`模型系列 ${seriesIndex + 1}`]), el("div", { style: "flex:1" }),
+          st.series_groups.length > 1 ? el("button", { class: "btn small ghost", type: "button", onclick: () => { st.series_groups.splice(seriesIndex, 1); drawSeries(); } }, ["移除系列"]) : null,
+        ]),
+        el("div", { class: "grid cols-2" }, [
+          el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["模型系列"]), seriesInput]),
+          el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["模型品牌"]), brandInput]),
+        ]),
+        el("div", { class: "field" }, [el("span", { class: "label-text req" }, ["模型名称", UI.help("同一模型系列和品牌下可添加多个模型名称；模型名称在全局范围内必须唯一")]), namesBox,
+          el("button", { class: "btn small ghost", type: "button", style: "margin-top:8px", onclick: () => { series.model_names.push(""); drawNames(); } }, [UI.icon("plus", 13), "添加模型名称"]),
+        ]),
+      ]));
+    });
+  };
+  drawSeries();
+  const saveButton = el("button", { class: "btn primary", onclick: async event => {
+    err.textContent = "";
+    const normalizedGroups = st.series_groups.map(series => ({
+      model_series: series.model_series.trim(), model_brand: series.model_brand.trim(),
+      model_names: series.model_names.map(name => name.trim()).filter(Boolean),
+    }));
+    const names = normalizedGroups.flatMap(series => series.model_names);
+    if (!st.api_name) return void (err.textContent = "请填写 API 名称");
+    if (!st.provider) return void (err.textContent = "请填写 API 提供平台");
+    if (!/^https:\/\/\S+$/.test(st.endpoint)) return void (err.textContent = "Base URL 必须是 https:// 开头的完整地址");
+    if (!editing && !st.api_key) return void (err.textContent = "请填写 API Key");
+    if (normalizedGroups.some(series => !series.model_series || !series.model_brand || !series.model_names.length)) return void (err.textContent = "每个模型系列都必须填写模型系列、模型品牌和至少一个模型名称");
+    if (new Set(names.map(name => name.toLowerCase())).size !== names.length) return void (err.textContent = "本次填写的模型名称存在重复");
+    await UI.withBusy(event.currentTarget, async () => {
+      try {
+        const { models } = await UI.api("/v1/models");
+        const editingIds = new Set((group || []).map(model => model.model_id));
+        const globalNames = new Map((models || []).filter(model => !editingIds.has(model.model_id)).map(model => [String(model.model_name || "").toLowerCase(), model.model_name]));
+        const conflict = names.find(name => globalNames.has(name.toLowerCase()));
+        if (conflict) throw new Error(`模型名称「${conflict}」已存在，请使用全局唯一名称`);
+        const payload = { api_id: st.api_id, node_id: st.api_id, api_name: st.api_name, node_name: st.api_name, provider: st.provider,
+          source_type: st.source_type, api_type: st.api_type, endpoint: st.endpoint, api_key: st.api_key, api_protocol: "OpenAI", series_groups: normalizedGroups };
+        const result = editing
+          ? await UI.api(`/v1/model-nodes/${encodeURIComponent(st.api_id)}`, { method: "PUT", body: payload })
+          : await UI.api("/v1/model-nodes", { method: "POST", body: payload });
+        if (result?.error) throw new Error(result.error);
+        mask.remove();
+        modelConnectivityBatchBusy = true;
+        await renderModelConnections();
+        try { await runModelConnectivityBatch(result.model_ids || [], "save"); }
+        finally { modelConnectivityBatchBusy = false; await renderModelConnections(); }
+      } catch (error) {
+        err.textContent = error.data?.error || error.message;
+      }
+    }, "保存并校验中…");
+  } }, ["保存模型"]);
+  const apiKey = field("API Key", "api_key", editing ? "留空则保持原 Key" : "sk-...", "password", "保存后仅显示掩码");
+  const body = el("div", { class: "form-loose" }, [
+    el("div", { class: "sec-head" }, ["1. API 信息"]),
+    el("div", { class: "grid cols-2" }, [field("API 名称", "api_name", "例如：Qwen 生产 API"), field("API 提供平台", "provider", "例如：阿里云百炼 / 自研")]),
+    el("div", { class: "grid cols-2" }, [
+      el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["来源类型"]), sourceSelect]),
+      el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["计费类型"]), billingSelect]),
+    ]),
+    field("Base URL", "endpoint", "https://api.provider.com/v1", "url"), apiKey,
+    el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["API 协议", UI.help("当前使用 OpenAI 协议，不可修改")]), el("input", { type: "text", value: "OpenAI", readonly: true, "aria-readonly": "true" })]),
+    el("div", { class: "sec-head", style: "margin-top:8px" }, ["2. 模型接入信息"]), seriesBox,
+    el("button", { class: "btn ghost", type: "button", onclick: () => { st.series_groups.push({ model_series: "", model_brand: "", model_names: [""] }); drawSeries(); } }, [UI.icon("plus", 13), "添加模型系列"]),
+    err,
+    el("div", { style: "display:flex;justify-content:flex-end;gap:8px" }, [el("button", { class: "btn", onclick: () => mask.remove() }, ["取消"]), saveButton]),
+  ]);
+  const mask = UI.modal(editing ? "编辑模型" : "添加模型", body, null, { persistent: true });
+}
+
 // v8 模型画像总表：每行一个模型，按功能 / 成本 / 任务质量 / 专业领域分组维护。
 const PROFILE_STORE_KEY = "router-demo-model-profiles-v8";
 let profileTab = "features";
@@ -1136,14 +1393,18 @@ let profileSearch = "";
 let profileSort = { key: "", direction: "asc" };
 const profileFilters = { node_name: "", provider: "", model_series: "", model_brand: "" };
 const QUALITY_FIELDS = [
-  ["coding", "代码能力"], ["reasoning", "复杂推理"], ["creative", "创意写作"],
-  ["judgment", "研判写作"], ["data", "数据分析"], ["planning", "多步规划/工具调用"]
+  ["coding", "代码能力"], ["creative", "内容写作"], ["judgment", "学术写作"],
+  ["chat", "对话聊天"], ["knowledge", "知识问答"], ["data", "数据分析"], ["planning", "多步规划/工具调用"]
 ];
 const QUALITY_LEVELS = [[1,"很强"],[0.75,"强"],[0.5,"中性"],[0.25,"较弱"],[0,"弱"]];
 const DOMAIN_OPTIONS = ["医疗健康","法律合规","金融财经","政务公共服务","学科教育","科研学术","工业制造"];
+const CUSTOM_DOMAIN_STORE_KEY = "router-demo-custom-domains-v1";
+function customDomains(){try{return JSON.parse(localStorage.getItem(CUSTOM_DOMAIN_STORE_KEY)||"[]").filter(x=>typeof x==="string"&&x.trim());}catch(_){return [];}}
+function saveCustomDomains(domains){localStorage.setItem(CUSTOM_DOMAIN_STORE_KEY,JSON.stringify([...new Set(domains)]));}
 function savedProfiles(){try{return JSON.parse(localStorage.getItem(PROFILE_STORE_KEY)||"{}");}catch(_){return {};}}
+function removeDomainFromAllProfiles(domain){const all=savedProfiles();Object.keys(all).forEach(mid=>{if(Array.isArray(all[mid].domains))all[mid].domains=all[mid].domains.filter(item=>item!==domain);});localStorage.setItem(PROFILE_STORE_KEY,JSON.stringify(all));}
 function isMainstreamModel(m){const s=`${m.model_name||""} ${nodeMeta(m).model_series||""} ${nodeMeta(m).model_brand||""}`.toLowerCase();return /(gpt|claude|gemini|qwen|deepseek|llama|mistral|nova|atlas|sage|swift)/.test(s);}
-function builtInQuality(m){const s=String(m.model_name||"").toLowerCase();let q={coding:.75,reasoning:.75,creative:.75,judgment:.75,data:.75,planning:.75};if(/swift|mini|flash|haiku/.test(s))q={coding:.5,reasoning:.5,creative:.5,judgment:.5,data:.5,planning:.5};if(/sage|r1|reason/.test(s))q={coding:.75,reasoning:1,creative:.5,judgment:.75,data:1,planning:.75};if(/nova|gpt|claude|atlas/.test(s))q={coding:.75,reasoning:1,creative:.75,judgment:1,data:.75,planning:.75};return q;}
+function builtInQuality(m){const s=String(m.model_name||"").toLowerCase();let q={coding:.75,creative:.75,judgment:.75,chat:.75,knowledge:.75,data:.75,planning:.75};if(/swift|mini|flash|haiku/.test(s))q={coding:.5,creative:.5,judgment:.5,chat:.75,knowledge:.5,data:.5,planning:.5};if(/sage|r1|reason/.test(s))q={coding:.75,creative:.5,judgment:.75,chat:.5,knowledge:1,data:1,planning:.75};if(/nova|gpt|claude|atlas/.test(s))q={coding:.75,creative:.75,judgment:1,chat:1,knowledge:1,data:.75,planning:.75};return q;}
 function defaultModelProfile(m){const main=isMainstreamModel(m),caps=m.capabilities||{},ctx=Number(caps.context_window)||null;return {
   source:main?"builtin":"generic",confirmed:false,
   features:{text_input:true,text_output:true,image:main?!!caps.vision:false,image_output:main?!!caps.image_output:false,tool:main?!!caps.tool_call:false,thinking:main?!!caps.thinking:false,context:main?ctx:null,output:main?(Number(caps.max_output_tokens)||(ctx?Math.min(32768,Math.round(ctx/4)):8192)):null},
@@ -1212,7 +1473,7 @@ async function renderModelProfiles(){
       ])]),
       el("tbody",{},list.map(m=>{const x=nodeMeta(m),p=modelProfile(m),status=profileStatus(p,m),source=p.source==="builtin"?"系统预置":p.source==="generic"?"通用默认":"用户修改";return el("tr",{},[
         el("td",{class:"num",style:"font-weight:600;white-space:nowrap"},[m.model_name||m.model_id]),el("td",{},[x.node_name||"-"]),el("td",{},[m.provider||"-"]),el("td",{},[x.model_series||"-"]),el("td",{},[x.model_brand||"-"]),
-        ...profileGroupCells(p,m).map(v=>el("td",{style:"white-space:nowrap"},[v])),el("td",{style:`${actionSticky};z-index:4`},[el("button",{class:"btn small",onclick:()=>editModelProfile(m,profileTab)},["编辑"])])
+        ...profileGroupCells(p,m).map(v=>el("td",{style:`white-space:nowrap${v==="待填写"?";color:var(--danger);font-weight:600":""}`},[v])),el("td",{style:`${actionSticky};z-index:4`},[el("button",{class:"btn small",onclick:()=>editModelProfile(m,profileTab)},["编辑"])])
       ]);}))
     ])])
   ]));
@@ -1220,7 +1481,6 @@ async function renderModelProfiles(){
 
 function editModelProfile(m,tab){
   const p=JSON.parse(JSON.stringify(modelProfile(m))),x=nodeMeta(m),body=el("div",{class:"form-loose"}),err=el("div",{class:"field-error"});
-  body.appendChild(el("div",{class:"drawer-meta"},[el("span",{},[m.model_name||m.model_id]),el("span",{class:"muted"},[m.provider||"-"]),el("span",{class:"muted"},[`${x.model_series} · ${x.model_brand}`])]));
   const labeled=(label,node,hint="")=>el("label",{class:"field"},[el("span",{class:"label-text"},[label,hint?UI.help(hint):null]),node]);
   const boolRow=(label,key)=>{const lab=el("span",{class:"muted"},[p.features[key]?"支持":"不支持"]);return el("div",{class:"field",style:"display:flex;align-items:center;justify-content:space-between"},[el("span",{class:"label-text"},[label]),UI.toggle({checked:p.features[key],label:p.features[key]?"支持":"不支持",onChange:v=>{p.features[key]=v;lab.textContent=v?"支持":"不支持";return true;}})]);};
   if(tab==="features"){
@@ -1253,21 +1513,26 @@ function editModelProfile(m,tab){
     QUALITY_FIELDS.forEach(([key,label])=>{const sel=el("select",{},QUALITY_LEVELS.map(([v,t])=>el("option",{value:String(v),selected:Number(p.quality[key])===v},[`${t}（${v}）`])));sel.onchange=()=>p.quality[key]=Number(sel.value);body.appendChild(labeled(label,sel));});
   } else {
     const selected=new Set(p.domains||[]),wrap=el("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
-    const draw=()=>{wrap.innerHTML="";DOMAIN_OPTIONS.concat([...selected].filter(d=>!DOMAIN_OPTIONS.includes(d))).forEach(d=>wrap.appendChild(el("button",{type:"button",class:`btn small ${selected.has(d)?"primary":""}`,title:DOMAIN_OPTIONS.includes(d)?"":"自定义领域；点击移除",onclick:()=>{selected.has(d)?selected.delete(d):selected.add(d);draw();}},[d])));};draw();
-    const custom=el("input",{type:"text",placeholder:"输入其它专业领域",maxlength:"20"});
-    const addCustom=el("button",{type:"button",class:"btn",onclick:()=>{const v=custom.value.trim();if(!v)return;if(selected.has(v)){UI.toast("该领域已经添加",true);return;}selected.add(v);custom.value="";draw();}},["添加"]);
-    body.append(labeled("专业领域（可多选）",wrap,"未配置不影响模型参与通用任务路由"),labeled("其它领域",el("div",{style:"display:flex;gap:8px"},[custom,addCustom])));p._selectedDomains=selected;
+    const draw=()=>{wrap.innerHTML="";DOMAIN_OPTIONS.forEach(d=>wrap.appendChild(el("button",{type:"button",class:`btn small ${selected.has(d)?"primary":""}`,onclick:()=>{selected.has(d)?selected.delete(d):selected.add(d);draw();}},[d])));customDomains().forEach(d=>{const choose=el("button",{type:"button",class:`btn small domain-choice ${selected.has(d)?"primary":""}`,onclick:()=>{selected.has(d)?selected.delete(d):selected.add(d);draw();}},[d]);const remove=el("button",{type:"button",class:"domain-remove",title:`删除自定义领域「${d}」`,"aria-label":`删除自定义领域${d}`,onclick:async e=>{e.stopPropagation();const ok=await UI.confirm("删除自定义领域",`确定删除「${d}」吗？删除后，该领域会从所有模型的专业领域中同步移除。`,{okText:"确认删除",danger:true});if(!ok)return;saveCustomDomains(customDomains().filter(item=>item!==d));removeDomainFromAllProfiles(d);selected.delete(d);draw();UI.toast(`已从所有模型中删除领域「${d}」`);}},["×"]);wrap.appendChild(el("span",{class:`custom-domain-tag ${selected.has(d)?"selected":""}`},[choose,remove]));});};draw();
+    const customArea=el("div",{style:"margin-top:10px"});
+    const drawCustomInput=()=>{customArea.innerHTML="";const addButton=el("button",{type:"button",class:"btn",onclick:()=>{
+      const input=el("input",{type:"text",placeholder:"输入其它专业领域",maxlength:"20",style:"flex:1"});
+      const confirm=()=>{const v=input.value.trim();if(!v)return;if(DOMAIN_OPTIONS.includes(v)||customDomains().includes(v)){UI.toast("该领域已经存在",true);return;}saveCustomDomains([...customDomains(),v]);selected.add(v);draw();drawCustomInput();UI.toast(`已添加全局领域「${v}」`);};
+      input.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();confirm();}if(e.key==="Escape")drawCustomInput();};
+      customArea.innerHTML="";customArea.appendChild(el("div",{style:"display:flex;gap:8px;align-items:center"},[input,el("button",{type:"button",class:"btn primary",onclick:confirm},["确认"]),el("button",{type:"button",class:"btn",onclick:drawCustomInput},["取消"])]));input.focus();
+    }},[UI.icon("plus",13),"添加其它领域"]);customArea.appendChild(addButton);};drawCustomInput();
+    body.append(labeled("专业领域（可多选）",el("div",{},[wrap,customArea]),"未配置不影响模型参与通用任务路由"));p._selectedDomains=selected;
   }
   body.appendChild(err);
-  const foot=el("div",{style:"display:flex;gap:8px;align-items:center;width:100%"},[el("button",{class:"btn ghost",onclick:()=>{resetModelProfile(m.model_id);UI.toast(isMainstreamModel(m)?"已恢复系统内置默认值":"已恢复通用默认值");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},[isMainstreamModel(m)?"恢复系统默认值":"恢复通用默认值"]),el("div",{style:"flex:1"}),el("button",{class:"btn",onclick:()=>mask.querySelector(".close-btn")?.click()},["取消"]),el("button",{class:"btn primary",onclick:()=>{if(tab==="features"&&p.features.output&&p.features.context&&p.features.output>p.features.context){err.textContent="最大输出 Token 不能超过最大上下文 Token";return;}if(tab==="cost"){const billingType=x.api_type,packageApi=billingType==="package",usageApi=billingType!=="private"&&!packageApi;if(usageApi&&(p.cost.input==null||p.cost.output==null)){err.textContent="请填写输入价格和输出价格";return;}if(usageApi&&p.features.image_output&&p.cost.image_price==null){err.textContent="请填写图片生成价格";return;}if(packageApi&&(!Number.isInteger(p.cost.package_token_limit)||p.cost.package_token_limit<=0)){err.textContent="套餐 Token 额度上限必须为正整数";return;}if(packageApi&&p.cost.package_overage_available==null){err.textContent="请选择超额后是否可继续使用";return;}if(packageApi&&p.cost.package_overage_available&&(p.cost.package_overage_input==null||p.cost.package_overage_input<0||p.cost.package_overage_output==null||p.cost.package_overage_output<0)){err.textContent="请填写有效的超额输入价格和输出价格";return;}}if(tab==="domains")p.domains=[...p._selectedDomains];delete p._selectedDomains;persistModelProfile(m.model_id,p);UI.toast("模型画像已保存");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},["保存"])]);
+  const foot=el("div",{style:"display:flex;gap:8px;align-items:center;width:100%"},[el("button",{class:"btn",onclick:()=>{resetModelProfile(m.model_id);UI.toast(isMainstreamModel(m)?"已恢复系统内置默认值":"已恢复通用默认值");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},["恢复默认"]),el("div",{style:"flex:1"}),el("button",{class:"btn",onclick:()=>mask.querySelector(".close-btn")?.click()},["取消"]),el("button",{class:"btn primary",onclick:()=>{if(tab==="features"&&p.features.output&&p.features.context&&p.features.output>p.features.context){err.textContent="最大输出 Token 不能超过最大上下文 Token";return;}if(tab==="cost"){const billingType=x.api_type,packageApi=billingType==="package",usageApi=billingType!=="private"&&!packageApi;if(usageApi&&(p.cost.input==null||p.cost.output==null)){err.textContent="请填写输入价格和输出价格";return;}if(usageApi&&p.features.image_output&&p.cost.image_price==null){err.textContent="请填写图片生成价格";return;}if(packageApi&&(!Number.isInteger(p.cost.package_token_limit)||p.cost.package_token_limit<=0)){err.textContent="套餐 Token 额度上限必须为正整数";return;}if(packageApi&&p.cost.package_overage_available==null){err.textContent="请选择超额后是否可继续使用";return;}if(packageApi&&p.cost.package_overage_available&&(p.cost.package_overage_input==null||p.cost.package_overage_input<0||p.cost.package_overage_output==null||p.cost.package_overage_output<0)){err.textContent="请填写有效的超额输入价格和输出价格";return;}}if(tab==="domains")p.domains=[...p._selectedDomains];delete p._selectedDomains;persistModelProfile(m.model_id,p);UI.toast("模型画像已保存");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},["保存"])]);
   const titles={features:"功能画像",cost:"成本画像",quality:"任务画像",domains:"专业领域"};const mask=UI.drawer(`编辑${titles[tab]} · ${m.model_name||m.model_id}`,body,foot);
 }
 
-const RENDER = { models: renderModelNodes, dispatch: renderDispatch, profile: renderModelProfiles, apidoc: renderApiDocPage };
-// 走查深链：?register=1 直接打开添加节点；?policy=1 打开第一条策略的参数抽屉
+const RENDER = { models: renderModelConnections, dispatch: renderDispatch, profile: renderModelProfiles, apidoc: renderApiDocPage };
+// 走查深链：?register=1 直接打开添加模型；?policy=1 打开第一条策略的参数抽屉
 setTimeout(async () => {
   const q = new URLSearchParams(location.search);
-  if (q.get("register")) modelNodeDialog();
+  if (q.get("register")) modelApiDialog();
   if (q.get("policy")) {
     try {
       const [{ policies }, { models }] = await Promise.all([UI.api("/v1/policies"), UI.api("/v1/models")]);

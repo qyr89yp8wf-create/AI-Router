@@ -33,6 +33,7 @@ window.TestChat = (function () {
 
     // 调用方式选择：自绘分组下拉（调度策略 / 多模型 / 指定模型），不用系统默认 select
     const pickState = { kind: "policy", value: null, label: "加载中……" };
+    const routeUiState = { apiId: null, costAlpha: 0.5 };
     let pickGroups = [];
     const pickLab = el("span", { class: "fsel-label" }, [pickState.label]);
     const modelSel = el("button", { class: "fsel tc-pick", type: "button", "aria-label": "选择调用方式" }, [pickLab, el("span", { class: "fsel-caret" }, [UI.icon("chevron", 13)])]);
@@ -44,8 +45,11 @@ window.TestChat = (function () {
           { label: "调度策略", items: (policies || []).filter(p => p.enabled && !p.ab_group).map(p => {
             const hex = String(p.policy_id).replace(/[^0-9a-f]/gi, "").slice(0, 8) || "0";
             const sid = String(parseInt(hex, 16) % 1000000).padStart(6, "0");
-            return { kind: "policy", value: p.policy_id, label: (p.name || p.policy_id) + " · ID:" + sid,
+            return { kind: "policy", value: p.policy_id, label: p.name || p.policy_id,
+              route_api_id: p.route_api_id || "route-api-default", route_api_name: p.route_api_name || "默认路由 API",
               allow_aggregation: !!p.allow_aggregation,
+              alpha: (p.params || {}).alpha ?? 0.5, allow_cost_preference: (p.params || {}).allow_cost_effect_preference !== false,
+              allow_agg_override: (p.params || {}).allow_agg_override !== false && (p.params || {}).allow_agg_override !== 0,
               default_aggregation: (p.params || {}).default_aggregation === "on" ? "on" : "off" };
           }) },
           { label: "多模型", items: [{ kind: "multi", value: null, label: "多模型回答 + 择优" }] },
@@ -56,6 +60,8 @@ window.TestChat = (function () {
         else if (pickGroups[0].items.length) {
           const f = pickGroups[0].items[0];
           setPick("policy", f.value, f.label);
+          routeUiState.apiId = f.route_api_id;
+          routeUiState.costAlpha = f.alpha;
           aggState.value = f.allow_aggregation ? f.default_aggregation : "off";
         }
         drawModeBar();
@@ -100,32 +106,38 @@ window.TestChat = (function () {
     function drawModeBar() {
       if (!opts.mountEl || !opts.keepReasoning) return; // 智能交互测试不暴露模型路由选择
       modeBar.innerHTML = "";
-      // 模型路由测试：单一选择器——切换不同路由策略看效果
       const policies2 = (pickGroups.find(g => g.label === "调度策略") || { items: [] }).items;
       if (!policies2.length) return;
       if (pickState.kind !== "policy" || !policies2.find(it => it.value === pickState.value)) {
         const f = policies2[0]; setPick("policy", f.value, f.label);
       }
-      modeBar.appendChild(el("span", { class: "muted", style: "flex:none;font-size:var(--font-small)" }, ["路由策略"]));
       const syncAggregation = (policy) => {
         aggState.value = policy && policy.allow_aggregation ? policy.default_aggregation : "off";
+        routeUiState.costAlpha = policy ? policy.alpha : 0.5;
       };
-      modeBar.appendChild(UI.fancySelect({ value: pickState.value, width: "210px",
-        options: policies2.map(it => [it.value, it.label]),
+      const routeApis=[...new Map(policies2.map(it=>[it.route_api_id,{id:it.route_api_id,name:it.route_api_name}])).values()];
+      if(!routeUiState.apiId||!routeApis.some(api=>api.id===routeUiState.apiId))routeUiState.apiId=routeApis[0].id;
+      let strategies=policies2.filter(it=>it.route_api_id===routeUiState.apiId);
+      if(!strategies.some(it=>it.value===pickState.value)){const first=strategies[0];setPick("policy",first.value,first.label);syncAggregation(first);}
+      const control=(label,node,cls="")=>el("label",{class:`tc-route-control ${cls}`},[el("span",{class:"tc-route-label"},[label]),node]);
+      modeBar.appendChild(control("路由 API",UI.fancySelect({value:routeUiState.apiId,width:"185px",options:routeApis.map(api=>[api.id,api.name]),onChange:v=>{routeUiState.apiId=v;const first=policies2.find(it=>it.route_api_id===v);if(first){setPick("policy",first.value,first.label);syncAggregation(first);}drawModeBar();}})));
+      modeBar.appendChild(control("路由策略",UI.fancySelect({ value: pickState.value, width: "180px",
+        options: strategies.map(it => [it.value, it.label]),
         onChange: (v) => {
-          const hit = policies2.find(x => x.value === v);
+          const hit = strategies.find(x => x.value === v);
           setPick("policy", v, hit ? hit.label : v);
           syncAggregation(hit);
           drawModeBar();
-        } }));
-      // 初始值来自策略配置；不再提供“跟随策略默认”这一中间态。
+        } })));
       const activePolicy = policies2.find(it => it.value === pickState.value);
       if (activePolicy && !activePolicy.allow_aggregation) aggState.value = "off";
-      modeBar.appendChild(el("span", { class: "muted", style: "flex:none;font-size:var(--font-small);margin-left:10px" }, ["聚合参数"]));
-      modeBar.appendChild(UI.fancySelect({ value: aggState.value, width: "150px",
-        options: activePolicy && activePolicy.allow_aggregation ? [["on", "打开聚合"], ["off", "关闭聚合"]] : [["off", "关闭聚合"]],
-        onChange: (v) => { aggState.value = v; } }));
-      modeBar.appendChild(el("div", { style: "flex:1" }));
+      const levels=[0,0.2,0.5,0.8,1],idx=Math.max(0,levels.indexOf(routeUiState.costAlpha));
+      const costValue=el("span",{class:"tc-cost-value num"},[String(levels[idx])]);
+      const costRange=el("input",{type:"range",min:"0",max:"4",step:"1",value:String(idx),disabled:activePolicy&&!activePolicy.allow_cost_preference,title:activePolicy&&!activePolicy.allow_cost_preference?"该策略使用固定成本—效果权重":"拖动设置本次请求的成本—效果偏好"});
+      costRange.oninput=()=>{routeUiState.costAlpha=levels[Number(costRange.value)];costValue.textContent=String(routeUiState.costAlpha);};
+      if(activePolicy?.allow_cost_preference)modeBar.appendChild(control("成本—效果偏好",el("div",{class:"tc-cost-axis"},[el("span",{class:"muted"},["省钱"]),costRange,el("span",{class:"muted"},["质量"]),costValue])));
+      if(activePolicy?.allow_aggregation&&activePolicy?.allow_agg_override)modeBar.appendChild(control("聚合参数",UI.fancySelect({ value: aggState.value, width: "130px",
+        options: [["on", "打开聚合"], ["off", "关闭聚合"]],onChange: (v) => { aggState.value = v; } })));
     }
     const composer = el("div", { class: "tc-composer" }, [opts.mountEl ? null : modelSel, input, sendBtn]);
     // 两种宿主：默认右侧抽屉；opts.mountEl 提供容器则渲染为页面内对话区（独立测试页用）
@@ -184,21 +196,20 @@ window.TestChat = (function () {
 
       const bubble = botBubble();
       // 智能交互测试：路由过程属于模型路由平台，不展示步骤，只给轻量思考指示
-      const reason = el("div", { class: "reason-panel" }, [el("div", { class: "muted", style: "margin-bottom:4px" },
-        [opts.keepReasoning ? "思考过程" : "正在思考……"])]);
+      const reason = el("div", { class: "model-answering" }, [el("span", { class: "answering-spinner" }),el("span", { class: "muted" }, ["模型回答中..."])]);
       bubble.appendChild(reason);
       scrollBottom();
       const addStep = (t, evt2) => {
         if (!opts.keepReasoning) return;
         // 回答模型和聚合模型会在最终决策行中明确展示，避免在过程里重复一遍。
         if (["fastlane", "switch", "manual_select"].includes(evt2?.step)) return;
-        const node = el("div", { class: "reason-step" }, [el("span", { class: "dot" }, ["·"]), el("span", {}, [t])]);
+        const node = el("div", { class: "reason-step", style:"display:none" }, [el("span", { class: "dot" }, ["·"]), el("span", {}, [t])]);
         reason.appendChild(node);
         // 粗排打分：展示各候选模型的历史命中率（论文 Step 2 的过程数据）
         if (opts.keepReasoning && evt2 && evt2.scores) {
           const ranked = Object.entries(evt2.scores).sort((x, y) => y[1] - x[1]).slice(0, 5);
           const maxV = ranked.length ? ranked[0][1] || 1 : 1;
-          reason.appendChild(el("div", { class: "rs-bars" }, ranked.map(([mid, v]) =>
+          reason.appendChild(el("div", { class: "rs-bars", style:"display:none" }, ranked.map(([mid, v]) =>
             el("div", { class: "rs-row" }, [
               el("span", { class: "rs-m num" }, [mid]),
               el("div", { class: "rs-track" }, [el("div", { class: "rs-fill" + ((evt2.candidates || []).includes(mid) ? " on" : ""), style: `width:${Math.round(v / maxV * 100)}%` })]),
@@ -216,6 +227,7 @@ window.TestChat = (function () {
             card_context: cardContext, skip_card_match: !!o.skipCardMatch,
             mode: pickedMode(), manual_model: pickState.kind === "model" ? pickState.value : null,
             aggregate: opts.keepReasoning ? aggState.value : undefined,
+            cost_effect_alpha: opts.keepReasoning ? routeUiState.costAlpha : undefined,
             policy_id: pickedPolicy() }),
         });
         const reader = res.body.getReader();
@@ -276,48 +288,50 @@ window.TestChat = (function () {
             send("继续执行刚才的操作", { summary: "用户已确认执行该高风险操作" });
         },
       };
-      // 展示顺序：路由推导与决策（一个卡片）-> 回复 -> 底部路径标签小字
-      let ansTag = null, candDetails = null;
-      let routeCardRendered = false;
+      // 回答优先；路由决策过程作为回答后的按需展开信息。
+      let ansTag = null, candDetails = null, decisionToggle = null, routeCard = null;
       if (evt.decision_summary && opts.keepReasoning) {
         const d = evt.decision_summary;
         const pol = d.policy || {};
-        const rows = [];
-        // 决策摘要只保留策略、回答模型、聚合模型与成本；推导步骤放在同一卡片上方。
-        if (d.mode === "manual") {
-          rows.push(["策略", `手动路由 · ${pol.allow_aggregation ? `允许聚合 · 本次${d.aggregate_override === "on" ? "聚合" : "不聚合"}` : "不允许聚合"}`]);
-        } else {
-          rows.push(["策略", `${pol.name || pol.policy_id || "-"} · 成本-效果权重 ${pol.alpha ?? "-"} · ` +
-            (pol.allow_aggregation ? `允许聚合 · 本次${d.aggregate_override === "on" ? "聚合" : "不聚合"}` : "不允许聚合")]);
-        }
         const modelName = (id) => {
           const hit = (pickGroups.find(g => g.label === "指定模型") || { items: [] }).items.find(x => x.value === id);
           return hit ? hit.label : (id || "-");
         };
         const finalName = d.final_model || "-";
         const answerModels = d.candidates && d.candidates.length ? d.candidates : [finalName];
-        rows.push(["回答模型", el("span", {}, answerModels.map((m, i) => el("span", {}, [
-          i ? "、" : "", !d.aggregator && m === finalName ? el("strong", {}, [modelName(m)]) : modelName(m),
-        ])))]);
-        if (d.aggregator) rows.push(["聚合模型", el("strong", {}, [modelName(d.aggregator)])]);
         const calls = d.model_calls || [];
-        if (calls.length) {
-          rows.push(["成本", el("span", { class: "num" }, [
-            calls.map(c2 => `${c2.model_id} ${(c2.tokens_in || 0) + (c2.tokens_out || 0) + (c2.tokens_thinking || 0)}tk ${UI.fmtCost(c2.cost)}`).join(" + "),
-            ` = ${UI.fmtCost(d.total_cost)} · ${UI.fmtMs(d.total_latency_ms)}`,
-          ])]);
-        } else {
-          rows.push(["成本", `${UI.fmtCost(d.total_cost)} · ${UI.fmtMs(d.total_latency_ms)}`]);
+        const agg = d.aggregation_decision || {};
+        const f3 = value => Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "-";
+        const stepTexts = [...reason.querySelectorAll(".reason-step")].map(n => n.textContent.replace(/^·/, "").trim());
+        const kv = (k, v) => el("div", { class: "rd-kv" }, [el("span", {}, [k]), el("strong", {}, [String(v ?? "-")])]);
+        const recognition=stepTexts.find(t=>t.includes("识别任务画像"))||stepTexts[0]||"本次未进行任务画像识别";
+        const sections = [el("section", { class: "rd-section" }, [el("h4", {}, ["1. 任务画像识别"]),el("div", { class: "rd-step" }, [el("span", { class: "rd-no" }, ["1"]),el("span", {}, [recognition])])])];
+        if (d.score_details && Object.keys(d.score_details).length) {
+          const rows = Object.entries(d.score_details).sort((a,b)=>b[1].combined_score-a[1].combined_score);
+          sections.push(el("section", { class: "rd-section" }, [
+            el("h4", {}, ["2. 候选模型评分"]),
+            el("div", { class: "rd-formula num" }, [`质量分权重 ${f3(d.effective_alpha ?? pol.alpha)}、便宜分权重 ${f3(1-(d.effective_alpha ?? pol.alpha))}；综合分 = ${f3(d.effective_alpha ?? pol.alpha)} × 质量分 + ${f3(1-(d.effective_alpha ?? pol.alpha))} × 便宜分`]),
+            el("div", { class: "rd-table-wrap" }, [el("table", { class: "rd-table" }, [
+              el("thead", {}, [el("tr", {}, ["排名", "模型", "质量分", "便宜分", "综合分"].map(x=>el("th",{},[x])))]),
+              el("tbody", {}, rows.map(([id,s],i)=>el("tr",{},[i+1,modelName(id),f3(s.quality_score),f3(s.cheap_score),f3(s.combined_score)].map((x,j)=>el("td",{class:j!==1?"num":""},[String(x)])))))
+            ])]),el("div", { class:"rd-selected-list" }, (d.switch_result==="aggregated"?answerModels.slice(0,2):answerModels.slice(0,1)).map((id,i)=>{const call=calls.find(c=>c.role==="answer"&&c.model_id===id)||calls.find(c=>c.model_id===id)||{};return el("div", { class:"rd-selected" }, [`回答模型 ${i+1}：`,el("strong",{},[modelName(id)]),el("span",{class:"num"},[` · ${(call.tokens_in||0)+(call.tokens_out||0)+(call.tokens_thinking||0)} Token · ${UI.fmtMs(call.latency_ms||0)}`])]);}))
+          ]));
         }
-        const routeCard = el("details", { class: "route-cot" }, [
-          el("summary", { class: "rc-title" }, [`路由推导与决策（${steps} 步）`]),
-          ...processNodes,
-          ...rows.map(([k, v]) => el("div", { class: "rc-row" }, [
-            el("span", { class: "rc-k" }, [k]), el("span", { class: "rc-v" }, [v]),
-          ])),
-        ]);
-        reason.replaceWith(routeCard);
-        routeCardRendered = true;
+        const aggRows=Object.entries(agg.score_details||{}).sort((a,b)=>b[1].score-a[1].score);
+        const aggregatorCall=calls.find(c=>c.role==="aggregator")||calls.find(c=>c.model_id===d.aggregator)||{};
+        sections.push(el("section", { class: "rd-section" }, [
+          el("h4", {}, [d.score_details ? "3. 聚合模型选择" : "2. 聚合模型选择"]),
+          agg.used||d.switch_result==="aggregated"
+            ? el("div", {}, [
+                el("div", { class: "rd-formula" }, [`聚合模型得分 = ${f3(agg.weights?.task??.6)} × 本任务质量 + ${f3(agg.weights?.knowledge??.2)} × 知识问答 + ${f3(agg.weights?.judgment??.2)} × 学术写作`]),
+                el("div", { class:"rd-table-wrap", style:"margin-top:8px" }, [el("table", { class:"rd-table" }, [el("thead",{},[el("tr",{},["排名","模型","本任务质量","知识问答","学术写作","聚合得分"].map(x=>el("th",{},[x])))]),el("tbody",{},aggRows.map(([id,s],i)=>el("tr",{},[i+1,modelName(id),f3(s.task),f3(s.knowledge),f3(s.judgment),f3(s.score)].map((x,j)=>el("td",{class:j!==1?"num":""},[String(x)])))))])]),
+                el("div", { class:"rd-selected" }, ["聚合模型：",el("strong",{},[modelName(d.aggregator)]),el("span",{class:"num"},[` · ${(aggregatorCall.tokens_in||0)+(aggregatorCall.tokens_out||0)+(aggregatorCall.tokens_thinking||0)} Token · ${UI.fmtMs(aggregatorCall.latency_ms||0)}`])])
+              ])
+            : el("div", { class: "muted" }, ["本次未开启聚合，不执行聚合模型选择。"]),
+        ]));
+        routeCard = el("div", { class: "route-decision-card", hidden: "" }, [el("div", { class: "rd-head" }, [el("strong", {}, ["路由决策过程"])]),...sections]);
+        decisionToggle = el("button", { class: "decision-toggle", type: "button" }, ["展开路由决策过程"]);
+        decisionToggle.onclick = () => { const opening = routeCard.hidden; routeCard.hidden = !opening; decisionToggle.textContent = opening ? "收起路由决策过程" : "展开路由决策过程"; };
         // 底部标签：同首页卡片式（蓝 chip + 小字）
         const tagText = {
           explore: `随机探索 · ${modelName(finalName)}`,
@@ -330,8 +344,9 @@ window.TestChat = (function () {
         }[d.switch_result] || d.switch_result;
         ansTag = el("div", { class: "ans-tags" }, [
           el("span", { class: "chip ai" }, [tagText]),
+          decisionToggle,
           el("span", { class: "muted", style: "font-size:var(--font-caption)" },
-            [`${(d.candidates || []).length || 1} 路候选 · ${UI.fmtCost(d.total_cost)} · ${UI.fmtMs(d.total_latency_ms)}`]),
+            [`${calls.reduce((s,c)=>s+(c.tokens_in||0)+(c.tokens_out||0)+(c.tokens_thinking||0),0)} Token · ${UI.fmtMs(d.total_latency_ms)}`]),
         ]);
         if (d.switch_result === "aggregated") {
           const pref = (evt.components || []).find(c2 => c2.component_type === "feedback.preference");
@@ -345,16 +360,17 @@ window.TestChat = (function () {
           ]);
         }
       }
-      if (!routeCardRendered) {
+      if (!routeCard) {
         if (!steps) reason.remove();
         else {
           const summary = el("details", {}, [el("summary", { class: "muted", style: "cursor:pointer" },
             [`思考过程（${steps} 步）`]), ...processNodes]);
           reason.replaceWith(el("div", { class: "reason-panel" }, [summary]));
         }
-      }
-      if (evt.content) bubble.appendChild(el("div", {}, [evt.content]));
+      } else reason.remove();
+      if (evt.content) bubble.appendChild(el("div", { class: "answer-content" }, [evt.content]));
       if (ansTag) bubble.appendChild(ansTag);
+      if (routeCard) bubble.appendChild(routeCard);
       if (candDetails) bubble.appendChild(candDetails);
       if (evt.ask_card) {
         const env = evt.ask_card;

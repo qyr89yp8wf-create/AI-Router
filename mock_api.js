@@ -7,7 +7,7 @@
   // v7 会话状态机：配置智能路由模型 → benchmark 得分表（点格修正）→ 判维路由（静态站可走完整动线）
   const v7 = { router: null, overrides: {}, asof: null };
   const policyLocal = { policies: null };
-  const SMART_AGGREGATION_WEIGHTS = { task: 0.6, reasoning: 0.2, judgment: 0.2 };
+  const SMART_AGGREGATION_WEIGHTS = { task: 0.6, knowledge: 0.2, judgment: 0.2 };
   function defaultPolicyParams(overrides) {
     const params={ K: 3, N_base: 50, beta: 0.5, professional_domain_weight: 0.5,
       gamma: 0.95, eps: 0.5, sigma: 0.3, delta: 0.2, t: 0.8, max_agg_tokens: 13000,
@@ -23,23 +23,23 @@
           allow_agg_override: 1, default_aggregation: "off" }),
         latency_tier: "balanced", allow_aggregation: 1, explore_ratio: 0, model_whitelist: [],
         budget_cap: {}, enabled: 1, ab_group: null, ab_split: 50, version: 1,
-        api_key: "sk-route-manual000000", system_preset: 1 },
-      { policy_id: "policy-global-balanced", name: "全局均衡", route_type: "smart", scope: "global",
+        api_key: "sk-route-default2026", route_api_id: "route-api-default", system_preset: 1 },
+      { policy_id: "policy-global-balanced", name: "均衡模式", route_type: "smart", scope: "global",
         tenant_id: null, scene: null,
         params: defaultPolicyParams({ route_type: "smart", router_model: "swift-4b", alpha: 0.5, beta: 0.5,
           professional_domain_weight: 0.5, aggregation_weights: { ...SMART_AGGREGATION_WEIGHTS },
           allow_cost_effect_preference: true, allow_agg_override: 1, default_aggregation: "off" }),
         latency_tier: "balanced", allow_aggregation: 1, explore_ratio: 0.05, model_whitelist: [],
         budget_cap: {}, enabled: 1, ab_group: null, ab_split: 50, version: 1,
-        api_key: "sk-route-8e82edc914e7cbd5", system_preset: 1 },
-      { policy_id: "policy-scene-fast", name: "省钱优先", route_type: "smart", scope: "custom",
+        api_key: "sk-route-default2026", route_api_id: "route-api-default", system_preset: 1 },
+      { policy_id: "policy-scene-fast", name: "省钱模式", route_type: "smart", scope: "custom",
         tenant_id: "tenant-demo", scene: null,
         params: defaultPolicyParams({ route_type: "smart", router_model: "swift-4b", K: 1, alpha: 0.2, beta: 0.5,
           professional_domain_weight: 0.5, aggregation_weights: { ...SMART_AGGREGATION_WEIGHTS },
           allow_cost_effect_preference: false, allow_agg_override: 0, default_aggregation: "off" }),
         latency_tier: "fast", allow_aggregation: 0, explore_ratio: 0.02, model_whitelist: [],
         budget_cap: {}, enabled: 1, ab_group: null, ab_split: 50, version: 1,
-        api_key: "sk-route-a996df0be0058eef", system_preset: 1 },
+        api_key: "sk-route-default2026", route_api_id: "route-api-default", system_preset: 1 },
       { policy_id: "policy-scene-quality", name: "专家模式", route_type: "smart", scope: "custom",
         tenant_id: "tenant-demo", scene: null,
         params: defaultPolicyParams({ route_type: "smart", router_model: "swift-4b", alpha: 0.8, beta: 0.5,
@@ -47,7 +47,7 @@
           allow_cost_effect_preference: false, allow_agg_override: 1, default_aggregation: "on" }),
         latency_tier: "quality", allow_aggregation: 1, explore_ratio: 0.08, model_whitelist: [],
         budget_cap: {}, enabled: 1, ab_group: null, ab_split: 50, version: 1,
-        api_key: "sk-route-8fe4fcb5c12ca9ae", system_preset: 1 },
+        api_key: "sk-route-default2026", route_api_id: "route-api-default", system_preset: 1 },
     ];
   }
   function policyState() {
@@ -58,7 +58,7 @@
     body = body || {};
     const top = { ...existing, ...body };
     const incomingParams = { ...(body.params || {}) };
-    ["alpha", "beta", "professional_domain_weight", "aggregation_weights", "router_model",
+    ["alpha", "beta", "professional_domain_weight", "aggregation_weights", "aggregation_model_mode", "aggregator_model", "router_model",
       "allow_cost_effect_preference", "allow_agg_override", "fallback_model", "default_aggregation"].forEach(k => {
       if (body[k] !== undefined) incomingParams[k] = body[k];
     });
@@ -91,17 +91,18 @@
   const prodLocal = { created: [], updated: {}, deleted: new Set() }; // 会话内产品操作
   // 模型操作会话内状态：设默认兜底 / 启停 / 思考开关 / 编辑 / 删除（否则快照回读=界面无反应）
   const modelLocal = { defaultId: null, status: {}, thinking: {}, updated: {}, deleted: new Set(), created: [] };
-  // 当前版任务画像：代码、复杂推理、创意写作、研判写作、数据分析、多步规划/工具调用。
+  // 当前版任务画像：代码、内容写作、学术写作、对话聊天、知识问答、数据分析、多步规划/工具调用。
   const DIM_KEYWORDS = {
     coding: ["SQL", "sql", "代码", "脚本", "接口", "报错", "正则", "函数", "调试", "同步失败"],
-    reasoning: ["计算", "求解", "推理", "证明", "为什么", "因果", "利息", "折算"],
+    knowledge: ["什么是", "为什么", "知识", "解释", "介绍", "原理", "定义", "问答"],
     creative: ["创意", "文案", "故事", "广告", "标题", "命名", "改写", "润色"],
-    judgment: ["分析", "研判", "比较", "评估", "风险", "建议", "起草", "通知", "邮件", "汇报"],
+    judgment: ["论文", "学术", "研究", "摘要", "文献", "论证", "综述", "引用"],
+    chat: ["你好", "谢谢", "在吗", "你是谁", "早上好", "聊天", "再见"],
     data: ["数据", "趋势", "毛利", "百分", "利率", "环比", "同比", "报表", "统计", "结构"],
     planning: ["计划", "规划", "步骤", "流程", "工具", "执行", "JSON", "表格输出", "按格式", "逐条"],
   };
   const MULTIMODAL_KEYWORDS = ["图片", "图像", "截图", "照片", "识别图", "看图", "音频", "语音", "视频", "扫描件"];
-  const QUALITY_TO_BENCH = { coding: "coding", reasoning: "math", creative: "writing", judgment: "writing", data: "math", planning: "instruct" };
+  const QUALITY_TO_BENCH = { coding: "coding", creative: "writing", judgment: "writing", chat: "instruct", knowledge: "math", data: "math", planning: "instruct" };
   const CHAT_WORDS = ["你好", "谢谢", "在吗", "你是谁", "早上好"];
   function classifyDims(text) {
     const hits = [];
@@ -111,9 +112,9 @@
     });
     hits.sort((a, b) => b[0] - a[0]);
     let dims = hits.slice(0, 2).map(h => h[1]);
-    return dims.length ? dims : ["reasoning"];
+    return dims.length ? dims : ["knowledge"];
   }
-  const DIM_CN = { coding: "代码能力", reasoning: "复杂推理", creative: "创意写作", judgment: "研判写作",
+  const DIM_CN = { coding: "代码能力", creative: "内容写作", judgment: "学术写作", chat: "对话聊天", knowledge: "知识问答",
     data: "数据分析", planning: "多步规划/工具调用" };
   function benchState() {
     const base = JSON.parse(JSON.stringify(D["/api/benchmark"] || { dims: [], scores: {}, models: [], overrides: {},
@@ -238,34 +239,71 @@
     return {};
   }
 
+  function nodeModelEntries(body) {
+    const groups = Array.isArray(body?.series_groups) && body.series_groups.length
+      ? body.series_groups
+      : [{ model_series: body?.model_series || "", model_brand: body?.model_brand || "", model_names: body?.model_names || [] }];
+    return groups.flatMap(group => (group.model_names || []).map(name => ({
+      model_name: String(name || "").trim(), model_series: String(group.model_series || "").trim(), model_brand: String(group.model_brand || "").trim(),
+    }))).filter(entry => entry.model_name);
+  }
+
+  function createNodeModel(body, entry, apiId) {
+    const slug = entry.model_name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "model";
+    const mid = slug + "-" + Math.random().toString(36).slice(2, 6);
+    modelLocal.created.push({ model_id: mid, model_name: entry.model_name, display_name: entry.model_name,
+      provider: body.provider, endpoint: body.endpoint, credential_masked: "sk-****", price_input: 0, price_output: 0,
+      capabilities: { api_id: apiId, node_id: apiId, api_name: body.api_name || body.node_name, node_name: body.api_name || body.node_name,
+        source_type: body.source_type || "official", model_series: entry.model_series, model_brand: entry.model_brand,
+        api_protocol: body.api_protocol || "OpenAI", api_type: body.api_type }, status: "active",
+      bank_coverage: 1, deploy_type: body.api_type === "private" ? "self_hosted" : "api" });
+    return mid;
+  }
+
   function postMock(pn, body) {
     if (pn === "/v1/model-nodes") {
-      const ids = [];
-      (body.model_names || []).forEach((name, i) => {
-        const mid = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) + "-" + Math.random().toString(36).slice(2, 6);
-        ids.push(mid); modelLocal.created.push({ model_id: mid, model_name: name, display_name: body.node_name,
-          provider: body.provider, endpoint: body.endpoint, credential_masked: "sk-****", price_input: 0, price_output: 0,
-          capabilities: { node_id: body.node_id, node_name: body.node_name, model_series: body.model_series,
-            model_brand: body.model_brand, api_protocol: "OpenAI", api_type: body.api_type }, status: "active",
-          bank_coverage: 1, deploy_type: body.api_type === "private" ? "self_hosted" : "api" });
-      });
-      return { ok: true, node_id: body.node_id, model_ids: ids };
+      const entries = nodeModelEntries(body), names = entries.map(entry => entry.model_name.toLowerCase());
+      if (new Set(names).size !== names.length) return { error: "本次填写的模型名称存在重复" };
+      const all = ((D["/v1/models"] || {}).models || []).concat(modelLocal.created).filter(model => !modelLocal.deleted.has(model.model_id));
+      const conflict = entries.find(entry => all.some(model => String(model.model_name || "").toLowerCase() === entry.model_name.toLowerCase()));
+      if (conflict) return { error: `模型名称「${conflict.model_name}」已存在，请使用全局唯一名称` };
+      const apiId = body.api_id || body.node_id;
+      const ids = entries.map(entry => createNodeModel(body, entry, apiId));
+      return { ok: true, node_id: apiId, api_id: apiId, model_ids: ids };
     }
     if (/^\/v1\/model-nodes\/[^/]+$/.test(pn)) {
       const nodeId = decodeURIComponent(pn.split("/")[3]);
-      const all = ((D["/v1/models"] || {}).models || []).concat(modelLocal.created);
-      const existing = all.filter(m => !modelLocal.deleted.has(m.model_id) && (((m.capabilities || {}).node_id || `legacy-provider-${m.provider || m.model_id}`) === nodeId));
-      const wanted = new Set(body.model_names || []);
-      existing.forEach(m => { if (!wanted.has(m.model_name)) modelLocal.deleted.add(m.model_id); else modelLocal.updated[m.model_id] = {
-        display_name: body.node_name, provider: body.provider, endpoint: body.endpoint, deploy_type: body.api_type === "private" ? "self_hosted" : "api",
-        capabilities: { ...(m.capabilities || {}), node_id: nodeId, node_name: body.node_name, model_series: body.model_series,
-          model_brand: body.model_brand, api_protocol: "OpenAI", api_type: body.api_type } }; });
-      const have = new Set(existing.map(m => m.model_name));
-      (body.model_names || []).filter(n => !have.has(n)).forEach(name => {
-        const mid = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0,18)+"-"+Math.random().toString(36).slice(2,6);
-        modelLocal.created.push({model_id:mid,model_name:name,display_name:body.node_name,provider:body.provider,endpoint:body.endpoint,credential_masked:"sk-****",price_input:0,price_output:0,capabilities:{node_id:nodeId,node_name:body.node_name,model_series:body.model_series,model_brand:body.model_brand,api_protocol:"OpenAI",api_type:body.api_type},status:"active",bank_coverage:1,deploy_type:body.api_type==="private"?"self_hosted":"api"});
+      const all = ((D["/v1/models"] || {}).models || []).concat(modelLocal.created).filter(model => !modelLocal.deleted.has(model.model_id));
+      const existing = all.filter(m => !modelLocal.deleted.has(m.model_id) && (((m.capabilities || {}).api_id || (m.capabilities || {}).node_id || `legacy-provider-${m.provider || m.model_id}`) === nodeId));
+      const entries = nodeModelEntries(body), names = entries.map(entry => entry.model_name.toLowerCase());
+      if (new Set(names).size !== names.length) return { error: "本次填写的模型名称存在重复" };
+      const otherNames = new Set(all.filter(model => !existing.some(item => item.model_id === model.model_id)).map(model => String(model.model_name || "").toLowerCase()));
+      const conflict = entries.find(entry => otherNames.has(entry.model_name.toLowerCase()));
+      if (conflict) return { error: `模型名称「${conflict.model_name}」已存在，请使用全局唯一名称` };
+      const entryByName = new Map(entries.map(entry => [entry.model_name.toLowerCase(), entry]));
+      existing.forEach(model => {
+        const entry = entryByName.get(String(model.model_name || "").toLowerCase());
+        if (!entry) { modelLocal.deleted.add(model.model_id); return; }
+        modelLocal.updated[model.model_id] = { display_name: entry.model_name, provider: body.provider, endpoint: body.endpoint,
+          deploy_type: body.api_type === "private" ? "self_hosted" : "api",
+          capabilities: { ...(model.capabilities || {}), api_id: nodeId, node_id: nodeId, api_name: body.api_name || body.node_name,
+            node_name: body.api_name || body.node_name, source_type: body.source_type || "official", model_series: entry.model_series,
+            model_brand: entry.model_brand, api_protocol: body.api_protocol || "OpenAI", api_type: body.api_type } };
       });
-      return { ok: true };
+      const have = new Set(existing.map(model => String(model.model_name || "").toLowerCase()));
+      entries.filter(entry => !have.has(entry.model_name.toLowerCase())).forEach(entry => createNodeModel(body, entry, nodeId));
+      const refreshed = ((D["/v1/models"] || {}).models || []).concat(modelLocal.created).filter(model => !modelLocal.deleted.has(model.model_id));
+      const resultIds = entries.map(entry => refreshed.find(model => String(model.model_name || "").toLowerCase() === entry.model_name.toLowerCase())?.model_id).filter(Boolean);
+      return { ok: true, node_id: nodeId, api_id: nodeId, model_ids: resultIds };
+    }
+    if (/^\/v1\/models\/[^/]+\/connectivity-test$/.test(pn)) {
+      const modelId = decodeURIComponent(pn.split("/")[3]);
+      const all = ((D["/v1/models"] || {}).models || []).concat(modelLocal.created)
+        .filter(model => !modelLocal.deleted.has(model.model_id))
+        .map(model => ({ ...model, ...(modelLocal.updated[model.model_id] || {}) }));
+      const model = all.find(item => item.model_id === modelId);
+      if (!model || !model.endpoint) return { ok: false, error: "模型不存在或 Base URL 未配置" };
+      return { ok: true, status: "connected", latency_ms: 120 + Math.floor(Math.random() * 280) };
     }
     if (/^\/v1\/model-nodes\/[^/]+\/delete$/.test(pn)) { (body.model_ids || []).forEach(id => modelLocal.deleted.add(id)); return { ok: true }; }
     if (pn === "/api/apikeys") {
@@ -374,7 +412,8 @@
         budget_cap: {}, enabled: 1, ab_group: null, ab_split: 50, version: 1,
         api_key: apiKey, system_preset: 0 }, body);
       created.policy_id = pid;
-      created.api_key = apiKey;
+      created.api_key = body.api_key || apiKey;
+      created.route_api_id = body.route_api_id || "route-api-default";
       policyState().push(created);
       return { policy_id: pid, api_key: apiKey };
     }
@@ -395,7 +434,8 @@
       copy.scope = "custom";
       copy.tenant_id = "tenant-demo";
       copy.version = 1;
-      copy.api_key = "sk-route-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 8);
+      copy.api_key = source.api_key;
+      copy.route_api_id = source.route_api_id || "route-api-default";
       copy.system_preset = 0;
       policyState().push(copy);
       return { policy_id: copy.policy_id, name: copy.name, api_key: copy.api_key };
@@ -509,9 +549,9 @@
         { step: "final", trace_id: "demo-trace", turn_id: "t-" + Math.random().toString(36).slice(2, 8),
           content: "收到，已按你的选择继续跟进：" + ((body.card_context || {}).summary || "") + "",
           decision_summary: { mode: "auto", switch_result: "fastlane", final_model: "swift-4b", candidates: ["swift-4b"],
-            route_layer: "dims", dimensions: ["reasoning"],
+            route_layer: "dims", dimensions: ["knowledge"],
             total_cost: 0.0002, total_latency_ms: 380,
-            policy: { policy_id: "policy-global-balanced", name: "全局均衡", latency_tier: "balanced", K: 3 } },
+            policy: { policy_id: "policy-global-balanced", name: "均衡模式", latency_tier: "balanced", K: 3 } },
           usage: { cost: 0.0002, tokens: 180 } },
       ], 300);
     }
@@ -525,7 +565,7 @@
             content: "", ask_card: makeEnvelope(hit),
             decision_summary: { mode: "auto", switch_result: "await_user", final_model: null, candidates: [],
               total_cost: 0, total_latency_ms: 120,
-              policy: { policy_id: "policy-global-balanced", name: "全局均衡", latency_tier: "balanced", K: 3 } },
+              policy: { policy_id: "policy-global-balanced", name: "均衡模式", latency_tier: "balanced", K: 3 } },
             usage: { cost: 0, tokens: 0 } },
         ], 350);
       }
@@ -537,10 +577,16 @@
     const text = (body && body.text) || "";
     const pid = body && body.policy_id;
     const pol = policyState().find(p => p.policy_id === pid);
-    const polMeta = pol ? { policy_id: pol.policy_id, name: pol.name, route_type: pol.route_type || (pol.params || {}).route_type || "smart", latency_tier: pol.latency_tier,
+    const polMeta = pol ? { policy_id: pol.policy_id, name: pol.name, route_api_id: pol.route_api_id || "route-api-default", route_api_name: pol.route_api_name || "默认路由 API",
+      route_type: pol.route_type || (pol.params || {}).route_type || "smart", latency_tier: pol.latency_tier,
       allow_aggregation: pol.allow_aggregation, K: (pol.params || {}).K || 3, alpha: (pol.params || {}).alpha ?? 0.5,
-      router_model: (pol.params || {}).router_model || null, default_aggregation: (pol.params || {}).default_aggregation || "off" }
-      : { policy_id: "policy-global-balanced", name: "全局均衡", route_type: "smart", latency_tier: "balanced", allow_aggregation: 1, K: 3, alpha: 0.5, router_model: "swift-4b", default_aggregation: "off" };
+      allow_cost_effect_preference: (pol.params || {}).allow_cost_effect_preference ?? 1,
+      router_model: (pol.params || {}).router_model || null, default_aggregation: (pol.params || {}).default_aggregation || "off",
+      aggregation_model_mode: (pol.params || {}).aggregation_model_mode || "smart",
+      aggregator_model: (pol.params || {}).aggregator_model || null, aggregation_weights: (pol.params || {}).aggregation_weights || null }
+      : { policy_id: "policy-global-balanced", name: "均衡模式", route_api_id: "route-api-default", route_api_name: "默认路由 API",
+        route_type: "smart", latency_tier: "balanced", allow_aggregation: 1, K: 3, alpha: 0.5,
+        allow_cost_effect_preference: 1, router_model: "swift-4b", default_aggregation: "off", aggregation_model_mode: "smart" };
 
     // 手动路由：模拟终端用户选定回答模型，再校验候选范围；不进入智能判维与成本—效果打分。
     if (polMeta.route_type === "manual") {
@@ -559,7 +605,7 @@
         {step:"manual_check",text:`候选范围校验通过：${answer.display_name||answer.model_id} 在策略允许的 ${allowedIds.length} 个模型内`},
         {step:useAgg?"switch":"fastlane",text:useAgg?`聚合模型：${aggregator.display_name||aggregator.model_id}`:`回答模型：${answer.display_name||answer.model_id}`},
         {step:"final",trace_id:"demo-trace",turn_id:"t-"+Math.random().toString(36).slice(2,8),
-          content:useAgg?"已按终端用户选择调用回答模型，并完成聚合定稿。":"已按终端用户选择的回答模型完成作答。",
+          content:"可以从问题目标、现有条件和执行步骤三个方面展开处理。",
           decision_summary:{mode:"manual",switch_result:useAgg?"aggregated":"manual",final_model:answerId,candidates:[answerId],
             aggregator:aggregatorId,dimensions:[],total_cost:useAgg?0.0018:0.0004,total_latency_ms:useAgg?920:460,
             aggregation_default:polMeta.default_aggregation,aggregate_override:aggReq!=="auto"?aggReq:null,
@@ -591,7 +637,7 @@
       return sseStream([
         { step: "rule", text: "未配置智能路由模型，无法识别任务画像；回答模型：衡岳 Atlas-72B（兜底）" },
         { step: "final", trace_id: "demo-trace", turn_id: "t-" + Math.random().toString(36).slice(2, 8),
-          content: "（兜底模型示例回答）围绕这个问题，可以从现状、约束与可行动作三个层面展开分析。",
+          content: "可以从现状、约束与可行动作三个层面展开分析。",
           decision_summary: { mode: "auto", switch_result: "fallback", final_model: "atlas-72b", candidates: ["atlas-72b"],
             route_layer: "no_router", dimensions: [], total_cost: 0.0005, total_latency_ms: 640,
             model_calls: [{ model_id: "atlas-72b", tokens_in: 90, tokens_out: 160, tokens_thinking: 0, cost: 0.0005, latency_ms: 640 }],
@@ -600,7 +646,7 @@
       ], 420);
     }
 
-    const dims = classifyDims(text);
+    const dims = classifyDims(text).slice(0,1);
     const isMM = MULTIMODAL_KEYWORDS.some(w=>text.includes(w));
     const bm = benchState();
     let models = bm.models.filter(m => modelLocal.status[m.model_id] !== "disabled");
@@ -611,14 +657,17 @@
     }
     const configuredRouter=(D["/v1/models"]?.models||[]).find(m=>m.model_id===routerModelId);
     const rname=configuredRouter?.display_name||(v7.router&&v7.router.display_name)||routerModelId;
-    steps.push({ step: "dims", text: `路由器模型 ${rname} 识别任务画像：「${dims.map(d => DIM_CN[d] || d).join("、")}」（180ms · ¥0.0001）`, dims });
+    steps.push({ step: "dims", text: `路由器模型 ${rname} 识别任务画像：「${dims.map(d => DIM_CN[d] || d).join("、")}」（48 Token · 180ms）`, dims });
 
     // 综合分：判定维度平均得分 × 权重 + 省钱分 ×（1 - 权重）
     const inv = {}; let lo = Infinity, hi = -Infinity;
     models.forEach(m => { const v = 1 / Math.max(0.01, (m.price_input || 0) + (m.price_output || 0));
       inv[m.model_id] = v; lo = Math.min(lo, v); hi = Math.max(hi, v); });
-    const alpha = polMeta.alpha;
+    const requestedAlpha = Number(body && body.cost_effect_alpha);
+    const allowedAlpha = [0, 0.2, 0.5, 0.8, 1];
+    const alpha = polMeta.allow_cost_effect_preference && allowedAlpha.includes(requestedAlpha) ? requestedAlpha : polMeta.alpha;
     const ranked = [];
+    const scoreDetails = {};
     let savedProfiles = {};
     try { savedProfiles = JSON.parse(localStorage.getItem("router-demo-model-profiles-v8") || "{}"); } catch (_e) {}
     models.forEach(m => {
@@ -630,13 +679,22 @@
       if (!vals.length) return;
       const perf = vals.reduce((a, b) => a + b, 0) / vals.length / 100;
       const eff = hi > lo ? (inv[m.model_id] - lo) / (hi - lo) : 0.5;
-      ranked.push([m.model_id, Math.round((alpha * perf + (1 - alpha) * eff) * 1000) / 1000, m.display_name]);
+      const combined = alpha * perf + (1 - alpha) * eff;
+      scoreDetails[m.model_id] = {
+        dimension_scores: Object.fromEntries(dims.map((d, i) => [d, vals[i] == null ? null : Math.round(vals[i] * 10) / 10])),
+        quality_score: Math.round(perf * 1000) / 1000,
+        input_price: m.price_input || 0, output_price: m.price_output || 0,
+        price_sum: Math.round(((m.price_input || 0) + (m.price_output || 0)) * 10000) / 10000, inverse_price: Math.round(inv[m.model_id] * 1000) / 1000,
+        cheap_score: Math.round(eff * 1000) / 1000, quality_contribution: Math.round(alpha * perf * 1000) / 1000,
+        cheap_contribution: Math.round((1 - alpha) * eff * 1000) / 1000, combined_score: Math.round(combined * 1000) / 1000
+      };
+      ranked.push([m.model_id, Math.round(combined * 1000) / 1000, m.display_name]);
     });
     ranked.sort((a, b) => b[1] - a[1]);
     if (!ranked.length) {
       steps.push({ step: "rule", text: "候选模型在任务画像维度上均无得分；回答模型：衡岳 Atlas-72B（兜底）" });
       steps.push({ step: "final", trace_id: "demo-trace", turn_id: "t-" + Math.random().toString(36).slice(2, 8),
-        content: "（兜底模型示例回答）已按现有能力尽力作答。",
+        content: "可以先明确目标和限制条件，再逐步拆解可行方案。",
         decision_summary: { mode: "auto", switch_result: "fallback", final_model: "atlas-72b", candidates: ["atlas-72b"],
           route_layer: "else", dimensions: dims, total_cost: 0.0005, total_latency_ms: 640,
           model_calls: [{ model_id: "atlas-72b", tokens_in: 90, tokens_out: 140, tokens_thinking: 0, cost: 0.0005, latency_ms: 640 }],
@@ -655,23 +713,22 @@
     steps.push({ step: "coarse", text: strategyText, scores: scoreMap });
 
     const aggReq = (body && body.aggregate) || "auto";
-    const effectiveAgg = aggReq === "auto" ? polMeta.default_aggregation : aggReq;
-    const overrideDenied = aggReq === "on" && pol && ((pol.params || {}).allow_agg_override === 0);
-    const t = pol ? ((pol.params || {}).t ?? 0.8) : 0.8;
-    const gapClose = ranked.length >= 2 && ranked[0][1] - ranked[1][1] < Math.max(0.02, (1 - t) * 0.3);
-    const canAgg = (pol ? pol.allow_aggregation : 1) && effectiveAgg !== "off" && !overrideDenied;
-    const forceAgg = effectiveAgg === "on" && !overrideDenied && ranked.length >= 2;
-    const doAgg = ranked.length >= 2 && canAgg && (gapClose || forceAgg);
+    const canOverride = !pol || ((pol.params || {}).allow_agg_override !== 0);
+    const effectiveAgg = !canOverride || aggReq === "auto" ? polMeta.default_aggregation : aggReq;
+    const overrideDenied = !canOverride && aggReq !== "auto" && aggReq !== polMeta.default_aggregation;
+    const doAgg = !!(pol ? pol.allow_aggregation : 1) && effectiveAgg === "on";
     const top = ranked[0];
 
     if (!doAgg) {
       steps.push({ step: "fastlane", text: `回答模型：${top[2]}` });
       steps.push({ step: "final", trace_id: "demo-trace", turn_id: "t-" + Math.random().toString(36).slice(2, 8),
         content: isMM ? "已识别图像内容：箱号 TEMU1203987，箱体完好无明显破损。"
-          : "结论先行：整体趋势上行，建议优先关注供给端节奏，必要时再拆分区域看结构差异。",
+          : "整体趋势上行，建议优先关注供给端节奏，必要时再拆分区域看结构差异。",
         decision_summary: { mode: "auto", switch_result: "fastlane", final_model: top[0], candidates: [top[0]],
           route_layer: isMM ? "rule" : "dims", dimensions: dims,
+          effective_alpha:alpha, requested_alpha:Number.isFinite(requestedAlpha)?requestedAlpha:null, score_details:scoreDetails,
           aggregation_default:polMeta.default_aggregation,aggregate_override: aggReq !== "auto" ? aggReq : null, aggregate_override_denied: overrideDenied,
+          aggregation_decision:{requested:aggReq,allowed:!!polMeta.allow_aggregation,effective:effectiveAgg,used:false},
           total_cost: 0.0021, total_latency_ms: 780,
           model_calls: [{ model_id: top[0], tokens_in: 120, tokens_out: 190, tokens_thinking: 0, cost: 0.0021, latency_ms: 780 }],
           policy: polMeta },
@@ -679,24 +736,33 @@
       return sseStream(steps, 400);
     }
     const second = ranked[1];
-    steps.push({ step: "calling", text: forceAgg && !gapClose ? `${aggReq==="auto"?"策略默认聚合":"本次请求选择聚合"}：2 个候选并发作答` : "综合分接近：2 个候选并发作答",
+    const aw={...SMART_AGGREGATION_WEIGHTS,...(polMeta.aggregation_weights||{})};
+    const aggScoreDetails={};
+    models.forEach(m=>{const task=scoreDetails[m.model_id]?.quality_score??0,knowledge=((bm.scores[m.model_id]||{}).knowledge||0)/100,judgment=((bm.scores[m.model_id]||{}).writing||0)/100,score=aw.task*task+aw.knowledge*knowledge+aw.judgment*judgment;aggScoreDetails[m.model_id]={task,knowledge,judgment,score:Math.round(score*1000)/1000};});
+    const smartAggregator=Object.entries(aggScoreDetails).sort((a,b)=>b[1].score-a[1].score)[0]?.[0]||top[0];
+    const aggregatorId=polMeta.aggregation_model_mode==="fixed"&&polMeta.aggregator_model?polMeta.aggregator_model:smartAggregator;
+    const aggregatorName=models.find(m=>m.model_id===aggregatorId)?.display_name||aggregatorId;
+    steps.push({ step: "calling", text: `${aggReq==="auto"?"策略默认开启聚合":"本次请求开启聚合"}：2 个候选并发作答`,
       models: [{ id: top[0], name: top[2] }, { id: second[0], name: second[2] }] });
-    steps.push({ step: "switch", text: `保留 2 份回答，交给聚合模型 ${top[2]} 总结定稿`, result: "aggregated" });
+    steps.push({ step: "switch", text: `按聚合能力权重选择 ${aggregatorName} 总结定稿`, result: "aggregated" });
     steps.push({ step: "final", trace_id: "demo-trace", turn_id: "t-" + Math.random().toString(36).slice(2, 8),
-      content: "综合 2 个候选模型的回答并交叉验证：近八周价格整体呈上行趋势，建议关注供需两端的边际变化。",
+      content: "近八周价格整体呈上行趋势，建议关注供需两端的边际变化。",
       components: [{ schema_version: "1.0.0", render_id: "demo-pref", component_type: "feedback.preference",
         semantic_category: "evaluate", trigger_source: "system_injected", card_ref: null,
         params: { candidates: [
           { model_id: top[0], alias: "候选1", content: "近八周价格上行，涨幅 22%，动力来自供给收缩。" },
           { model_id: second[0], alias: "候选2", content: "价格中枢上移，建议关注库存与需求端边际变化。" }] } }],
-      decision_summary: { mode: "auto", switch_result: "aggregated", final_model: top[0],
-        candidates: [top[0], second[0]], aggregator: top[0],
+      decision_summary: { mode: "auto", switch_result: "aggregated", final_model: aggregatorId,
+        candidates: [top[0], second[0]], aggregator: aggregatorId,
         route_layer: isMM ? "rule" : "dims", dimensions: dims,
+        effective_alpha:alpha, requested_alpha:Number.isFinite(requestedAlpha)?requestedAlpha:null, score_details:scoreDetails,
         aggregation_default:polMeta.default_aggregation,aggregate_override: aggReq !== "auto" ? aggReq : null, aggregate_override_denied: false,
+        aggregation_decision:{requested:aggReq,allowed:!!polMeta.allow_aggregation,effective:effectiveAgg,used:true,weights:aw,score_details:aggScoreDetails},
         total_cost: 0.0083, total_latency_ms: 1240,
         model_calls: [
-          { model_id: top[0], tokens_in: 120, tokens_out: 260, tokens_thinking: 0, cost: 0.0047, latency_ms: 980 },
-          { model_id: second[0], tokens_in: 120, tokens_out: 210, tokens_thinking: 0, cost: 0.0036, latency_ms: 860 }],
+          { model_id: top[0], role:"answer", tokens_in: 120, tokens_out: 260, tokens_thinking: 0, cost: 0.0047, latency_ms: 980 },
+          { model_id: second[0], role:"answer", tokens_in: 120, tokens_out: 210, tokens_thinking: 0, cost: 0.0036, latency_ms: 860 },
+          { model_id: aggregatorId, role:"aggregator", tokens_in: 250, tokens_out: 100, tokens_thinking: 0, cost: 0, latency_ms: 720 }],
         policy: polMeta },
       usage: { cost: 0.0083, tokens: 1060 } });
     return sseStream(steps, 420);

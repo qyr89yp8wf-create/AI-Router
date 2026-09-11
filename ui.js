@@ -206,7 +206,7 @@ window.UI = (function () {
   function ctChip(ct, cls = "chip gray") { return el("span", { class: cls, title: ct || "" }, [ctName(ct)]); }
 
   // 左侧导航：三大模块 + 底部账户。二级项可指向同一页面的不同 tab（#hash）
-  // 两个平台各自独立的导航；共享页（操作日志等）按 window.SIA_PLATFORM 或高亮键推断归属
+  // 两个平台各自独立的导航；按 window.SIA_PLATFORM 或高亮键推断归属
   const PLATFORMS = {
     ia: {
       name: "智能交互平台", home: "./index.html",
@@ -276,13 +276,20 @@ window.UI = (function () {
       }, [icon(ic, 17), el("span", {}, [name])])));
       side.appendChild(box);
     });
-    // 审计日志：低频入口，收在底部账户上方
-    side.appendChild(el("div", { class: "nav-group", style: "margin-top:auto" }, [
-      el("a", { class: "navlink" + (active === "audit" ? " active" : ""), href: "./audit.html", "data-key": "audit" }, [
-        icon("layers", 17), el("span", {}, ["操作日志"]),
-      ]),
-    ]));
-    side.appendChild(el("div", { class: "nav-account", style: "margin-top:0" }, [
+    const openAccount = () => {
+      const row=(label,value)=>el("div",{class:"account-detail-row"},[el("span",{class:"muted"},[label]),el("strong",{class:"num"},[value])]);
+      let mask;
+      const logout=el("button",{class:"btn danger",onclick:async()=>{
+        if(!await confirmDialog("退出登录","确定退出当前账号？",{okText:"退出",danger:true}))return;
+        mask.remove();toast("已退出登录（演示环境）");
+      }},["退出登录"]);
+      mask=modal("用户信息",el("div",{class:"account-detail"},[
+        el("div",{class:"account-detail-profile"},[el("span",{class:"acc-avatar large"},["张"]),el("div",{},[el("div",{class:"acc-name"},["张三"]),el("div",{class:"muted"},["模型路由平台用户"])])]),
+        row("用户名","张三"),row("用户 ID","demo-admin"),row("用户权限","管理员"),
+        el("div",{class:"account-detail-actions"},[logout])
+      ]));
+    };
+    side.appendChild(el("button", { class: "nav-account", type:"button", "aria-label":"查看用户信息", onclick:openAccount }, [
       el("span", { class: "acc-avatar" }, ["张"]),
       el("span", { class: "acc-info" }, [
         el("span", { class: "acc-name" }, ["张三"]),
