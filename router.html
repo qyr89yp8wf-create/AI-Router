@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%231DA1F2'/%3E%3Crect x='10.5' y='3.6' width='9.6' height='7.3' rx='2.7' fill='none' stroke='%23fff' stroke-width='1.5' opacity='0.75'/%3E%3Cpath d='M3.4 12a3.7 3.7 0 0 1 3.7-3.7h6a3.7 3.7 0 0 1 3.7 3.7v2.3a3.7 3.7 0 0 1-3.7 3.7H9.5l-3.1 2.6c-.55.46-1.3.07-1.3-.64v-2.4A3.7 3.7 0 0 1 3.4 14.3z' fill='%23fff'/%3E%3Ccircle cx='7.4' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='10.25' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='13.1' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3C/svg%3E">
+<title>模型路由 · 智能交互平台</title>
+<link rel="stylesheet" href="./shared.css?v=13e2444f">
+<link rel="prefetch" href="./audit.html"><link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
+</head>
+<body class="has-side">
+<div class="page">
+  <div class="page-head" style="display:flex;align-items:center;gap:6px"><div class="page-title" id="pageTitle">模型接入</div><span id="headActions" style="margin-left:auto"></span></div>
+
+  <div id="tabContent"></div>
+</div>
+
+<script>window.SIA_PLATFORM="router";</script>
+<script src="./mock_data.js?v=d70be8bd"></script>
+<script src="./mock_api.js?v=15b223ff"></script>
+<script src="./tokens.js?v=360e29ed"></script>
+<script src="./ui.js?v=ff5d6dcf"></script>
+<script src="./components.js?v=2e39e148"></script>
+<script src="./testchat.js?v=31ecca27"></script>
+<script>
+UI.nav("router");
+const { el } = UI;
+// 走查：板块入口只保留左侧导航一处，页内不再放横向 tab（按 #hash 渲染）
+const SECTION_NAMES = { models: "模型接入", dispatch: "路由策略", profile: "模型画像", apidoc: "接入文档" };
+let activeTab = "models";
+
+let pollTimer = null;
+
+function showSection(key, first = false) {
+  if (key === "policies") key = "dispatch"; // 旧深链兼容
+  if (key === "flow" || key === "flywheel" || key === "scene" || key === "import" || key === "review") key = "profile"; // v7：数据集/飞轮页并入模型画像页
+  if (!RENDER[key]) key = "dispatch";
+  if (!first && key === activeTab) return;
+  activeTab = key;
+  clearInterval(pollTimer);
+  document.getElementById("pageTitle").textContent = SECTION_NAMES[key];
+  document.getElementById("headActions").innerHTML = "";
+  document.title = SECTION_NAMES[key] + " · 智能交互平台";
+  UI.loading(content());
+  RENDER[key]().catch(e => UI.toast("加载失败：" + e.message, true));
+}
+
+const content = () => document.getElementById("tabContent");
+
+// ================= 模型池 =================
+
+async function renderModels() {
+  const { models } = await UI.api("/v1/models");
+  const box = content();
+  box.innerHTML = "";
+  document.getElementById("headActions").appendChild(
+    el("a", { class: "btn small ghost", href: "./router.html#apidoc", target: "_blank", rel: "noopener",
+      title: "对接开发的完整口径（新标签页打开）" }, [UI.icon("link", 13), "接入文档"]));
+  const statusChip = { active: ["在线", "green"], registering: ["注册中", "yellow"],
+    paused: ["已停用", "gray"], retired: ["已退役", "red"] };
+  const table = el("table", { class: "data" }, [
+    el("thead", {}, [el("tr", {}, ["供应商", "名称", "模型型号", "接入方式", "单价 ¥/M（入 / 出）", "多模态", "思考模式", "启用情况", "操作"]
+      .map(h => el("th", { class: (h === "名称" || h === "模型型号") ? "w-main" : "" }, [h])))]),
+    el("tbody", {}, models.filter(m => (m.bank_coverage || 0) >= 1)
+      .sort((a2, b2) => String(a2.provider).localeCompare(String(b2.provider)) || String(a2.display_name).localeCompare(String(b2.display_name)))
+      .map((m, i, arr) => renderModelRow(m, i === 0 || arr[i - 1].provider !== m.provider))),
+  ]);
+  function renderModelRow(m, firstOfProvider) {
+      const [lb, color] = statusChip[m.status] || [m.status, "gray"];
+      const caps = m.capabilities || {};
+      const coverage = Math.round((m.bank_coverage || 0) * 100);
+      const backfill = m.backfill;
+      const noCred = m.credential_masked === "****";
+      return el("tr", {}, [
+        el("td", { style: "font-weight:600" }, [firstOfProvider ? m.provider : ""]),
+        el("td", { style: "min-width:160px" }, [
+          el("div", { style: "font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap" }, [m.display_name,
+            m.is_default ? el("span", { class: "chip blue", style: "flex:none;max-width:none", title: "默认兜底：智能路由故障时切换到此模型；不能停用或删凭证" }, ["默认兜底"]) : null]),
+        ]),
+        el("td", { class: "muted num" }, [m.model_name || m.model_id]),
+        el("td", {}, [m.deploy_type === "self_hosted"
+          ? el("span", { title: "自有部署：成本按 GPU 卡·时做简易估算" }, [`自有部署 · ${m.gpu_count} 卡`])
+          : el("span", { class: "muted" }, ["API 接入"])]),
+        el("td", { class: "num", title: m.deploy_type === "self_hosted"
+            ? "自有部署：按卡数折算的估算单价，可在「编辑」里修正" : "每百万 token 的输入 / 输出单价（人民币）" }, [
+          (Number(m.price_input) || Number(m.price_output))
+            ? el("span", {}, [`${m.price_input} / ${m.price_output}`,
+                m.deploy_type === "self_hosted" ? el("span", { class: "muted", style: "margin-left:4px" }, ["估算"]) : null])
+            : el("span", { class: "muted", title: "点「编辑」补充单价（可贴定价页链接由 AI 读取）" }, ["待补充"])]),
+        el("td", {}, [caps.vision
+          ? el("span", { title: "支持图像识别：多模态请求会被硬规则层分流到该模型" }, ["支持图像"])
+          : el("span", { class: "muted", title: "不支持图像：多模态请求不会路由给它" }, ["不支持"])]),
+        el("td", {}, [caps.thinking
+          ? (() => {
+              const lab2 = el("span", { class: "muted", style: "font-size:var(--font-caption)" }, [caps.thinking_enabled !== false ? "" : "关闭"]);
+              return el("span", { style: "display:inline-flex;align-items:center;gap:8px" }, [
+                UI.toggle({ checked: caps.thinking_enabled !== false,
+                  onChange: async (next) => {
+                    try {
+                      await UI.api(`/v1/models/${m.model_id}/thinking`, { method: "POST", body: { enabled: next } });
+                      lab2.textContent = next ? "" : "关闭";
+                      UI.toast(next ? "已开启思考模式" : "已关闭思考模式");
+                      return true;
+                    } catch (err) { UI.toast(err.data?.error || err.message, true); return false; }
+                  } }), lab2]);
+            })()
+          : el("span", { class: "muted", title: "该模型不支持深度思考" }, ["不支持"])]),
+        el("td", {}, [
+          m.is_default ? el("span", { class: "chip blue", title: "兜底模型常开，不能停用；先切换默认兜底才能操作" }, ["兜底"])
+          : noCred ? el("span", { class: "chip gray", title: "凭证未配置，不能启用" }, ["不可用"])
+          : UI.toggle({ checked: m.status === "active",
+            onChange: async (next) => {
+              if (!next) {
+                const ok = await UI.confirm("停用模型", `停用「${m.display_name}」后立即退出路由候选，进行中的请求将无法使用该模型。继续？`, { okText: "确认停用" });
+                if (!ok) return false;
+              }
+              try {
+                await UI.api(`/v1/models/${m.model_id}/status`, { method: "POST", body: { status: next ? "active" : "paused" } });
+                UI.toast(next ? "已启用，即时参与路由" : "已停用");
+                renderModels();
+                return true;
+              } catch (err) { UI.toast(err.data?.error || err.message, true); return false; }
+            } }),
+        ]),
+        el("td", {}, [el("div", { style: "display:flex;gap:6px;align-items:center" }, [
+          el("button", { class: "btn small", onclick: () => editModelDrawer(m) }, ["编辑"]),
+          (() => {
+            const more = el("button", { class: "btn small", "aria-label": "更多操作", onclick: () => UI.menu(more, [
+              !m.is_default && m.status === "active" ? { label: "设为默认兜底", onClick: async () => {
+                const ok = await UI.confirm("设为默认兜底模型", `所有降级 / 故障切换都会落到「${m.display_name}」。建议选择稳定、成本可控的模型。继续？`, { okText: "确认设置" });
+                if (!ok) return;
+                try { await UI.api(`/v1/models/${m.model_id}/set-default`, { method: "POST" }); UI.toast("已设为默认兜底模型"); renderModels(); }
+                catch (e) { UI.toast(e.data?.error || e.message, true); }
+              } } : null,
+              { label: "复制 model_id", onClick: () => { navigator.clipboard.writeText(m.model_id); UI.toast("已复制"); } },
+              !m.is_default ? { label: "删除模型", danger: true, onClick: async () => {
+                const ok = await UI.confirm("删除模型", `删除「${m.display_name}」后立即退出路由；历史得分与调用记录保留用于审计。`, { okText: "删除", danger: true });
+                if (!ok) return;
+                try { await UI.api(`/v1/models/${m.model_id}/delete`, { method: "POST" }); UI.toast("已删除"); renderModels(); }
+                catch (e) { UI.toast(e.data?.error || e.message, true); }
+              } } : null,
+              m.credential_masked !== "****" ? { label: "删除凭证并暂停", danger: true, onClick: async () => {
+                if (m.is_default) { UI.toast("默认兜底模型的凭证不能删除，请先切换默认模型", true); return; }
+                const ok = await UI.confirm("删除凭证", `删除「${m.display_name}」的凭证后模型立即暂停，进行中的会话自动切换备选模型。此操作不可撤销。`, { okText: "确认删除", danger: true });
+                if (!ok) return;
+                try { const r = await UI.api(`/v1/models/${m.model_id}/credential/delete`, { method: "POST" }); UI.toast(r.note); renderModels(); }
+                catch (e) { UI.toast(e.data?.error || e.message, true); }
+              } } : null,
+            ]) }, ["更多"]);
+            return more;
+          })(),
+        ])]),
+      ]);
+  }
+  box.appendChild(el("div", { class: "card" }, [
+    el("div", { style: "display:flex;justify-content:space-between;margin-bottom:10px" }, [
+      el("div", { class: "section-title", style: "margin:0" }, ["已接入模型"]),
+      el("div", { style: "display:flex;gap:8px" }, [
+        el("a", { class: "btn", href: "./playground.html#model" }, [UI.icon("play", 14), "测试"]),
+        el("button", { class: "btn primary", onclick: registerDialog }, [UI.icon("plus", 14), "添加模型"]),
+      ]),
+    ]),
+    table,
+  ]));
+}
+
+// 走查 R2：注册表单原先全英文字段名、无必填标记、无校验、无取消
+function registerDialog() {
+  if (document.querySelector(".modal-mask")) return; // 防连点叠开
+  // 两步：1 填接入信息做连接校验 → 2 自动带出单价与能力（可修改）后添加
+  const st = { model_name: "", display_name: "", provider: "", endpoint: "", credential_ref: "",
+               price_input: null, price_output: null, caps: null, deploy_type: "api", gpu_count: "" };
+  const fieldEl = (label, key, ph, hint, type = "text") => {
+    const n = el("input", { type, value: st[key] ?? "", placeholder: ph });
+    n.oninput = () => st[key] = n.value.trim();
+    return el("label", { class: "field" }, [
+      el("span", { class: "label-text req" }, [label, hint ? UI.help(hint) : null]), n]);
+  };
+  const err = el("div", { class: "field-error" });
+  const verifyBtn = el("button", { class: "btn primary", onclick: async (e) => {
+    err.textContent = "";
+    if (!st.provider) { err.textContent = "请填写供应商"; return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(st.model_name)) { err.textContent = "模型型号需为 1-40 位字母、数字、点、下划线或短横线"; return; }
+    if (!st.display_name) { err.textContent = "请填写名称"; return; }
+    if (!/^https:\/\/\S+$/.test(st.endpoint)) { err.textContent = "接口地址必须是 https:// 开头的完整 URL"; return; }
+    if (!/^vault:\/\/\S+$/.test(st.credential_ref)) { err.textContent = "凭证需为 vault:// 引用（密钥不明文入库）"; return; }
+    if (st.deploy_type === "self_hosted") {
+      const g = Number(st.gpu_count);
+      if (!Number.isInteger(g) || g < 1 || g > 512) { err.textContent = "自有部署请填写卡数（1-512 的整数）"; return; }
+    }
+    await UI.withBusy(e.currentTarget, async () => {
+      await new Promise(r => setTimeout(r, 600)); // 演示：模拟连通性校验
+      try {
+        const r = await UI.api("/v1/models", { method: "POST", body: {
+          model_name: st.model_name, display_name: st.display_name, provider: st.provider,
+          endpoint: st.endpoint, credential_ref: st.credential_ref,
+          deploy_type: st.deploy_type, gpu_count: st.deploy_type === "self_hosted" ? Number(st.gpu_count) : 0,
+          vision: !!st.vision,
+          capabilities: { tool_call: true, streaming: true } } });
+        UI.toast((st.deploy_type === "self_hosted"
+          ? "模型已添加并生效，成本已按卡数估算；benchmark 得分缺失时在「模型画像」页补录"
+          : "模型已添加并生效。可在列表「编辑」里补充官网单价，benchmark 得分缺失时在「模型画像」页补录")
+          + (r.same_name_count ? `。注意：型号 ${st.model_name} 已有 ${r.same_name_count} 条接入，请用名称区分` : ""));
+        mask.remove(); renderModels();
+      } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+    }, "校验中……");
+  } }, ["连接校验并添加"]);
+  const gpuIn = el("input", { type: "number", min: "1", max: "512", step: "1", value: "", placeholder: "例如 16" });
+  gpuIn.oninput = () => st.gpu_count = gpuIn.value.trim();
+  const gpuField = el("label", { class: "field", hidden: true }, [
+    el("span", { class: "label-text req" }, ["部署卡数",
+      UI.help("需要多少张 GPU 卡；平台按 GPU 卡·时折算出估算单价，可在「编辑」里修正")]), gpuIn]);
+  const deploySel = UI.fancySelect({ value: "api", width: "100%",
+    options: [["api", "API 接入（按官网单价计成本）"], ["self_hosted", "自有部署（按卡数做简易估算）"]],
+    onChange: (v) => { st.deploy_type = v; gpuField.hidden = v !== "self_hosted"; } });
+  const body = el("div", { class: "form-loose" }, [
+    el("div", { class: "sec-head" }, ["接入信息"]),
+    el("div", { class: "grid cols-2" }, [
+      fieldEl("供应商", "provider", "例如：alibaba / deepseek / 自研"),
+      fieldEl("模型型号", "model_name", "例如：qwen3-vl-8b-instruct",
+        "模型的官方型号。同一型号可接多条——官方 API 一条、自有部署一条，用名称区分；实例 ID 由系统生成"),
+    ]),
+    fieldEl("名称", "display_name", "例如：Qwen3-VL 官方版 / Qwen3-VL 本地版", "列表与路由决策里展示的名字，同型号多条接入靠它区分"),
+    fieldEl("接口地址", "endpoint", "https://api.provider.com/v1", "仅 https"),
+    fieldEl("API 凭证", "credential_ref", "vault://cred/my-model", "填 vault:// 引用，密钥加密存储、展示脱敏"),
+    el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["接入方式",
+      UI.help("API 接入的成本按官网单价；自有部署没有账单，按需要的 GPU 卡数做简易估算")]), deploySel]),
+    gpuField,
+    el("div", { class: "field" }, [
+      el("span", { class: "label-text" }, ["图像识别（多模态）",
+        UI.help("模型能否看图：多模态请求只会分流给支持图像的模型，一个都没有时走兜底")]),
+      UI.toggle({ checked: false, label: "不支持", onChange: (v, lab) => { st.vision = v; return true; } }),
+    ]),
+    err,
+    el("div", { class: "muted", style: "margin:4px 0 8px" }, ["单价 / 上下文长度非必选，添加后可在模型列表「编辑」里随时补充"]),
+    el("div", { style: "display:flex;justify-content:flex-end;margin-top:8px" }, [verifyBtn]),
+  ]);
+  const mask = UI.modal("添加模型", body, null, { persistent: true });
+}
+
+// 编辑模型：改名 + 接入方式与成本（API 官网单价 / 自有部署按卡数估算）+ 上下文
+function editModelDrawer(m) {
+  const nameIn = el("input", { type: "text", maxlength: "24", value: m.display_name });
+  const provIn = el("input", { type: "text", maxlength: "20", value: m.provider || "" });
+  const dst = { deploy_type: m.deploy_type || "api", gpu_count: m.gpu_count || "",
+    vision: !!(m.capabilities || {}).vision };
+  const gpuIn = el("input", { type: "number", min: "1", max: "512", step: "1", value: dst.gpu_count || "", placeholder: "例如 16" });
+  gpuIn.oninput = () => dst.gpu_count = gpuIn.value.trim();
+  const gpuField = el("label", { class: "field", hidden: dst.deploy_type !== "self_hosted" }, [
+    el("span", { class: "label-text req" }, ["部署卡数",
+      UI.help("按 GPU 卡·时折算估算单价；改卡数后把单价清空可重新估算")]), gpuIn]);
+  const deploySel = UI.fancySelect({ value: dst.deploy_type, width: "100%",
+    options: [["api", "API 接入（按官网单价计成本）"], ["self_hosted", "自有部署（按卡数做简易估算）"]],
+    onChange: (v) => { dst.deploy_type = v; gpuField.hidden = v !== "self_hosted"; } });
+  const urlIn = el("input", { type: "url", placeholder: "https://provider.com/pricing（官方定价 / 模型文档页）" });
+  const pin = el("input", { type: "number", step: "0.05", min: "0", max: "10000", value: Number(m.price_input) || "", placeholder: "例如 0.4" });
+  const pout = el("input", { type: "number", step: "0.05", min: "0", max: "10000", value: Number(m.price_output) || "", placeholder: "例如 0.8" });
+  const ctx = el("input", { type: "number", step: "1", min: "0", max: "100000", value: (m.capabilities?.context_window || 0) / 1024 || "", placeholder: "例如 128" });
+  const err = el("div", { class: "field-error" });
+  const aiBtn = el("button", { class: "btn ai", type: "button", disabled: true,
+    title: "先填写定价页链接", onclick: async (e) => {
+    if (!/^https:\/\/\S+$/.test(urlIn.value.trim())) { err.textContent = "定价页链接需为 https:// 开头的完整 URL"; return; }
+    err.textContent = "";
+    await UI.withBusy(e.currentTarget, async () => {
+      await new Promise(r => setTimeout(r, 900)); // 演示：模拟 AI 抓取定价页
+      let h = 0; const u = urlIn.value.trim();
+      for (let i = 0; i < u.length; i++) h = (h * 31 + u.charCodeAt(i)) >>> 0;
+      pin.value = (0.2 + (h % 8) * 0.1).toFixed(1);
+      pout.value = (Number(pin.value) * 2).toFixed(1);
+      ctx.value = [32, 64, 128, 256][h % 4];
+      UI.toast("AI 已从页面读出单价与上下文长度，请核对后保存");
+    }, "AI 获取中……");
+  } }, [UI.icon("wand", 14), "AI 自动获取"]);
+  urlIn.oninput = () => {
+    const has = !!urlIn.value.trim();
+    if (has) aiBtn.removeAttribute("disabled"); else aiBtn.setAttribute("disabled", "");
+    aiBtn.title = has ? "" : "先填写定价页链接";
+  };
+  const foot = el("div", { style: "display:flex;gap:8px;justify-content:flex-end;align-items:center;width:100%" }, [
+    err, el("div", { style: "flex:1" }),
+    el("button", { class: "btn", onclick: () => mask2.querySelector(".close-btn")?.click() }, ["取消"]),
+    el("button", { class: "btn primary", onclick: async (e) => {
+      if (!nameIn.value.trim()) { err.textContent = "显示名必填"; return; }
+      for (const [inp, lab] of [[pin, "输入单价"], [pout, "输出单价"]]) {
+        const v = inp.value.trim();
+        if (v !== "" && !(Number(v) >= 0 && Number(v) <= 10000)) { err.textContent = lab + " 需在 0 ~ 10000 之间"; return; }
+      }
+      if (ctx.value.trim() !== "" && !(Number(ctx.value) >= 0 && Number(ctx.value) <= 100000)) { err.textContent = "上下文长度需在 0 ~ 100000k 之间"; return; }
+      if (dst.deploy_type === "self_hosted") {
+        const g = Number(dst.gpu_count);
+        if (!Number.isInteger(g) || g < 1 || g > 512) { err.textContent = "自有部署请填写卡数（1-512 的整数）"; return; }
+      }
+      await UI.withBusy(e.currentTarget, async () => {
+        try {
+          if (!provIn.value.trim()) { err.textContent = "供应商必填"; return; }
+          await UI.api(`/v1/models/${m.model_id}/update`, { method: "POST",
+            body: { display_name: nameIn.value.trim(), provider: provIn.value.trim() } });
+          await UI.api(`/v1/models/${m.model_id}/profile-data`, { method: "POST", body: {
+            price_input: Number(pin.value) || 0, price_output: Number(pout.value) || 0,
+            context_window: Math.round((Number(ctx.value) || 0) * 1024),
+            deploy_type: dst.deploy_type,
+            gpu_count: dst.deploy_type === "self_hosted" ? Number(dst.gpu_count) : 0,
+            vision: dst.vision } });
+          UI.toast("已保存");
+          mask2.querySelector(".close-btn")?.click();
+          renderModels();
+        } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+      }, "保存中……");
+    } }, ["保存"]),
+  ]);
+  const mask2 = UI.drawer(`编辑模型 · ${m.display_name}`, el("div", { class: "form-loose" }, [
+    el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["模型名称"]), nameIn]),
+    el("div", { class: "grid cols-2" }, [
+      el("label", { class: "field" }, [el("span", { class: "label-text req" }, ["供应商"]), provIn]),
+      el("label", { class: "field" }, [el("span", { class: "label-text" }, ["模型型号",
+        UI.help("注册时确定，不可修改；同一型号可另接一条不同部署方式的实例")]),
+        el("input", { type: "text", value: m.model_name || m.model_id, disabled: true })]),
+    ]),
+    el("div", { class: "sec-head", style: "margin-top:8px" }, ["接入方式与成本",
+      el("span", { class: "muted", style: "margin-left:8px;font-weight:400;font-size:var(--font-caption)" }, ["API 接入贴官方定价页由 AI 读取；自有部署留空单价按卡数估算"])]),
+    el("label", { class: "field" }, [el("span", { class: "label-text" }, ["接入方式"]), deploySel]),
+    gpuField,
+    el("div", { class: "field" }, [
+      el("span", { class: "label-text" }, ["图像识别（多模态）",
+        UI.help("多模态请求只会分流给支持图像的模型")]),
+      UI.toggle({ checked: dst.vision, label: dst.vision ? "支持" : "不支持",
+        onChange: (v) => { dst.vision = v; return true; } }),
+    ]),
+    el("label", { class: "field" }, [el("span", { class: "label-text" }, ["定价页链接"]),
+      el("div", { style: "display:flex;gap:8px" }, [urlIn, aiBtn])]),
+    el("div", { style: "display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px" }, [
+      el("label", { class: "field" }, [el("span", { class: "label-text" }, ["输入单价（¥/M）"]), pin]),
+      el("label", { class: "field" }, [el("span", { class: "label-text" }, ["输出单价（¥/M）"]), pout]),
+      el("label", { class: "field" }, [el("span", { class: "label-text" }, ["上下文（k）"]), ctx]),
+    ]),
+    el("div", { class: "muted" }, ["模型型号、接口地址与凭证在注册时确定；换凭证走「更多 → 删除凭证并暂停」后重新添加"]),
+  ]), foot);
+}
+
+// ================= 策略 =================
+
+// 参数配置里的 API 对接说明：请求参数与返回字段的完整口径，整块可复制给对接开发
+function apiSnippet(apiKey, st={}) {
+  const routeLines=st.route_type==="manual"?[
+    '  "answer_models": ["model-id"], // 手动路由：终端用户从候选范围内指定回答模型',
+    '  "aggregate": "auto",          // auto 采用策略默认回答方式；on 聚合 / off 不聚合',
+    '  "aggregator_model": "model-id" // 聚合开启时可指定聚合模型',
+  ]:[
+    '  "aggregate": "auto"       // 智能路由：可选，auto 跟随策略默认 / on 强制聚合 / off 关闭聚合',
+  ];
+  return [
+    "// 1) 发起对话（POST /v1/route，SSE 流式返回）",
+    "{",
+    `  "api_key": "${apiKey}",   // 本策略的 Key，带上即按本策略路由`,
+    '  "text": "用户的问题",',
+    ...routeLines,
+    "}",
+    "",
+    "// 2) 返回（final 事件）关键字段",
+    "//   content           回答正文",
+    "//   request_id        本次请求编号，问题排查与对账用",
+    "//   applied           本次实际生效口径：{ route_type, aggregate, aggregation_used, policy_id }",
+    "//   decision_summary  路由决策：命中层级 route_layer / 相关维度 dimensions / 模型 / 成本",
+  ].join("\n");
+}
+
+function buildApiDoc(policyId, apiKey, st) {
+  const body = el("pre", { class: "num", style: "margin:8px 0 0;background:var(--bg-sunken);border-radius:8px;" +
+    "padding:10px 12px;font-size:var(--font-caption);line-height:1.6;white-space:pre-wrap;overflow-x:auto" },
+    [apiSnippet(apiKey,st)]);
+  body.hidden = true;
+  const toggleBtn = el("button", { class: "btn small ghost", type: "button", onclick: () => {
+    body.hidden = !body.hidden; toggleBtn.classList.toggle("active", !body.hidden);
+  } }, ["API 参数与返回说明", UI.icon("chevron", 13)]);
+  return el("div", { class: "field", style: "margin-top:2px" }, [
+    el("div", { style: "display:flex;align-items:center;gap:8px" }, [
+      toggleBtn,
+      el("div", { style: "flex:1" }),
+      el("button", { class: "btn small", type: "button", onclick: () => {
+        navigator.clipboard.writeText(apiSnippet(apiKey,st));
+        UI.toast("已复制 API 对接说明（含请求参数与返回字段）");
+      } }, [UI.icon("copy", 13), "复制对接说明"]),
+    ]),
+    body,
+  ]);
+}
+
+const COST_EFFECT_LEVELS=[[0,"只看成本"],[0.2,"明显偏成本"],[0.5,"效果成本均衡"],[0.8,"明显偏效果"],[1,"只看效果"]];
+function routerModelCost(m){
+  try{
+    const type=nodeMeta(m).api_type,p=modelProfile(m);
+    if(type==="private")return 0;
+    if(type==="package")return p.cost.package_overage_available&&p.cost.package_overage_input!=null&&p.cost.package_overage_output!=null?p.cost.package_overage_input+p.cost.package_overage_output:0;
+    if(p.cost.input!=null&&p.cost.output!=null)return p.cost.input+p.cost.output;
+  }catch(_e){}
+  const raw=(Number(m.price_input)||0)+(Number(m.price_output)||0);return raw>0?raw:Number.POSITIVE_INFINITY;
+}
+function cheapestRouterModel(models){return (models||[]).reduce((best,m)=>!best||routerModelCost(m)<routerModelCost(best)?m:best,null);}
+
+// 策略表单（新增与编辑共用）：公共模型范围 + 智能 / 手动两套路由参数。
+function policyForm(init, actives, policyId, apiKey) {
+  const aggInit=init.aggregation_weights||{};
+  const st={name:init.name||"",route_type:init.route_type||"smart",whitelist:new Set(init.whitelist||[]),fallback:init.fallback||"",router_model:init.router_model||"",
+    domain_weight:init.domain_weight??0.5,allow_agg:init.allow_agg!==false,default_aggregation:init.default_aggregation==="on"?"on":"off",
+    agg_task:aggInit.task??0.6,agg_reasoning:aggInit.reasoning??0.2,agg_judgment:aggInit.judgment??0.2,
+    allow_cost_preference:init.allow_cost_preference!==false,alpha:init.alpha??0.5};
+  st.alpha=COST_EFFECT_LEVELS.reduce((best,item)=>Math.abs(item[0]-st.alpha)<Math.abs(best[0]-st.alpha)?item:best,COST_EFFECT_LEVELS[0])[0];
+  if(st.whitelist.size===0)actives.forEach(m=>st.whitelist.add(m.model_id));
+  const recommendedRouter=cheapestRouterModel(actives);
+  if(!st.router_model||!actives.some(m=>m.model_id===st.router_model))st.router_model=recommendedRouter?.model_id||"";
+  const nameIn=el("input",{type:"text",maxlength:"15",value:st.name,placeholder:"例如：金融分析策略（1-15 字）"});
+  const nameErr=el("div",{class:"field-error"});
+  nameIn.oninput=()=>{st.name=nameIn.value;nameErr.textContent="";};
+  const withCap=m=>(m.display_name||m.model_name||m.model_id)+((m.capabilities||{}).vision?" · 图像":"");
+  const wlWrap=UI.tagSelect({selected:[...st.whitelist],minKeep:1,placeholder:"点击选择候选模型，可输入搜索",options:actives.map(m=>[m.model_id,withCap(m)]),onChange:vals=>{st.whitelist=new Set(vals);}});
+  if(!st.fallback){const dm=actives.find(m=>m.is_default)||actives[0];st.fallback=dm?dm.model_id:"";}
+  const fbSel=UI.fancySelect({value:st.fallback,width:"100%",options:actives.map(m=>[m.model_id,withCap(m)]),onChange:v=>st.fallback=v});
+  const slider=(key,leftLb,rightLb)=>{
+    const val=el("span",{class:"num",style:"font-weight:600;min-width:34px;text-align:right"},[Number(st[key]).toFixed(2)]);
+    const inp=el("input",{type:"range",min:"0",max:"1",step:"0.05",value:String(st[key]),style:"flex:1"});
+    const fill=()=>inp.style.setProperty("--fill",(Number(inp.value)*100)+"%");fill();
+    inp.oninput=()=>{st[key]=Number(inp.value);val.textContent=Number(st[key]).toFixed(2);fill();};
+    return el("div",{style:"display:flex;align-items:center;gap:10px"},[el("span",{class:"muted",style:"flex:none"},[leftLb]),inp,el("span",{class:"muted",style:"flex:none"},[rightLb]),val]);
+  };
+  const costEffectSlider=()=>{
+    let index=COST_EFFECT_LEVELS.findIndex(([value])=>value===st.alpha);if(index<0)index=2;
+    const val=el("span",{class:"num",style:"font-weight:600;min-width:24px;text-align:right"},[String(COST_EFFECT_LEVELS[index][0])]);
+    const inp=el("input",{type:"range",min:"0",max:String(COST_EFFECT_LEVELS.length-1),step:"1",value:String(index),style:"flex:1"});
+    const fill=()=>inp.style.setProperty("--fill",(Number(inp.value)/(COST_EFFECT_LEVELS.length-1)*100)+"%");fill();
+    inp.oninput=()=>{const level=COST_EFFECT_LEVELS[Number(inp.value)];st.alpha=level[0];val.textContent=String(level[0]);fill();};
+    const marks=el("div",{style:"display:grid;grid-template-columns:repeat(5,minmax(62px,1fr));gap:4px;margin:8px 34px 0;text-align:center"},COST_EFFECT_LEVELS.map(([value,label])=>el("div",{},[el("div",{class:"num",style:"font-weight:600"},[String(value)]),el("div",{class:"muted",style:"font-size:var(--font-caption);line-height:1.35"},[label])])));
+    return el("div",{},[el("div",{style:"display:flex;align-items:center;gap:10px"},[el("span",{class:"muted",style:"flex:none"},["更省钱"]),inp,el("span",{class:"muted",style:"flex:none"},["更高质量"]),val]),marks]);
+  };
+  const behaviorBox=el("div",{});
+  const weightInput=(label,key,onInput)=>{const input=el("input",{type:"number",min:"0",max:"1",step:"0.05",value:String(st[key])});input.oninput=()=>{st[key]=input.value===""?0:Number(input.value);onInput();};return el("label",{class:"field"},[el("span",{class:"label-text"},[label]),input]);};
+  const defaultAggregationField=()=>el("label",{class:"field"},[
+    el("span",{class:"label-text req"},["默认回答方式",UI.help("终端用户未传 aggregate 参数或传 auto 时采用；终端用户仍可按次选择聚合或不聚合")]),
+    UI.fancySelect({value:st.default_aggregation,width:"100%",options:[["off","默认不聚合"],["on","默认聚合"]],onChange:v=>st.default_aggregation=v}),
+  ]);
+  const drawBehavior=()=>{
+    behaviorBox.innerHTML="";
+    behaviorBox.appendChild(el("div",{class:"form-sec"},[st.route_type==="smart"?"智能路由参数":"手动路由参数"]));
+    if(st.route_type==="manual"){
+      behaviorBox.appendChild(el("div",{class:"field"},[
+        el("span",{class:"label-text"},["是否允许聚合"]),
+        UI.toggle({checked:st.allow_agg,label:st.allow_agg?"允许聚合":"不允许聚合",onChange:v=>{st.allow_agg=v;if(!v)st.default_aggregation="off";setTimeout(drawBehavior,0);return true;}}),
+        el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px;line-height:1.7"},[st.allow_agg?"开启后，允许终端用户自行配置回答模型和聚合模型，并可按次切换是否聚合。":"关闭后，终端用户仅可自行配置回答模型，不可使用聚合模型。"]),
+      ]));
+      if(st.allow_agg)behaviorBox.appendChild(defaultAggregationField());
+      return;
+    }
+    const routerSel=UI.fancySelect({value:st.router_model,width:"100%",options:actives.map(m=>[m.model_id,`${withCap(m)}${m.model_id===recommendedRouter?.model_id?"（系统推荐 · 最便宜）":""}`]),onChange:v=>st.router_model=v});
+    behaviorBox.appendChild(el("label",{class:"field"},[
+      el("span",{class:"label-text req"},["路由器模型",UI.help("用于识别请求的任务类型和专业领域，不直接回答用户问题")]),routerSel,
+      el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px"},[recommendedRouter?`系统默认推荐成本最低的模型：${withCap(recommendedRouter)}`:"暂无可选模型"]),
+    ]));
+    behaviorBox.appendChild(el("label",{class:"field"},[
+      el("span",{class:"label-text"},["专业领域能力权重",UI.help("识别出专业领域时，任务质量按（1 - 权重）× 通用任务能力 + 权重 × 专业领域匹配度计算；文档建议默认 0.50")]),
+      slider("domain_weight","通用任务能力","专业领域能力"),
+    ]));
+    behaviorBox.appendChild(el("div",{class:"field"},[
+      el("span",{class:"label-text"},["是否允许聚合",UI.help("开启后可并行调用多个回答模型，再由聚合模型生成最终答案")]),
+      UI.toggle({checked:st.allow_agg,label:st.allow_agg?"允许聚合":"不允许聚合",onChange:v=>{st.allow_agg=v;if(!v)st.default_aggregation="off";setTimeout(drawBehavior,0);return true;}}),
+    ]));
+    if(st.allow_agg){
+      behaviorBox.appendChild(defaultAggregationField());
+      const sumText=el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:-4px"});
+      const refreshSum=()=>{const sum=st.agg_task+st.agg_reasoning+st.agg_judgment;sumText.textContent=`聚合能力权重合计 ${sum.toFixed(2)}，必须等于 1.00`;sumText.style.color=Math.abs(sum-1)<0.001?"var(--text-muted)":"var(--danger)";};
+      behaviorBox.appendChild(el("div",{class:"field"},[
+        el("span",{class:"label-text"},["聚合路由能力权重",UI.help("用于选择聚合模型；文档默认：当前任务质量 0.60、复杂推理 0.20、研判写作 0.20")]),
+        el("div",{class:"grid cols-3"},[weightInput("当前任务质量","agg_task",refreshSum),weightInput("复杂推理","agg_reasoning",refreshSum),weightInput("研判写作","agg_judgment",refreshSum)]),sumText,
+      ]));refreshSum();
+    }
+    behaviorBox.appendChild(el("div",{class:"field"},[
+      el("span",{class:"label-text"},["是否允许成本—效果偏好配置",UI.help("开启后终端用户可覆盖偏好，下面配置未指定时采用的初始默认值；关闭后下面的权重固定生效")]),
+      UI.toggle({checked:st.allow_cost_preference,label:st.allow_cost_preference?"允许终端用户配置":"使用固定权重",onChange:v=>{st.allow_cost_preference=v;setTimeout(drawBehavior,0);return true;}}),
+      st.allow_cost_preference?el("div",{class:"muted",style:"font-size:var(--font-caption);margin-top:6px"},["终端用户可自行切换初始成本-效果的挡位。"]):null,
+    ]));
+    behaviorBox.appendChild(el("label",{class:"field"},[
+      el("span",{class:"label-text"},[st.allow_cost_preference?"初始成本—效果偏好":"固定成本—效果权重",UI.help("综合分 = α × 效果分 + (1 - α) × 便宜分；便宜分越高表示越便宜，因此 α=0 只看成本，α=1 只看效果")]),
+      costEffectSlider(),
+    ]));
+  };
+  const typeHint=el("div",{class:"muted",hidden:st.route_type!=="manual",style:"font-size:var(--font-caption);margin-top:6px"},["允许终端用户自行配置回答模型"]);
+  const fallbackField=el("label",{class:"field",hidden:st.route_type==="manual"},[el("span",{class:"label-text req"},["兜底模型",UI.help("候选模型调用失败或配置无效时，用它保底回答")]),fbSel]);
+  const typeSel=UI.fancySelect({value:st.route_type,width:"100%",options:[["smart","智能路由"],["manual","手动路由"]],onChange:v=>{st.route_type=v;typeHint.hidden=v!=="manual";fallbackField.hidden=v==="manual";drawBehavior();}});
+  const node=el("div",{class:"policy-form"},[
+    policyId?el("div",{class:"drawer-meta"},[
+      el("span",{},["策略 ID"]),el("span",{class:"cr-id num",title:"点击复制完整 ID",style:"cursor:pointer",onclick:()=>{navigator.clipboard.writeText(policyId);UI.toast("已复制策略 ID");}},[shortPolicyId(policyId)]),
+      apiKey?el("span",{},["API Key"]):null,apiKey?el("button",{class:"key-chip",title:"点击复制完整 Key",onclick:()=>{navigator.clipboard.writeText(apiKey);UI.toast("已复制 API Key");}},[el("span",{class:"num"},["sk-route-••••"+apiKey.slice(-4)]),UI.icon("copy",12)]):null,
+    ]):null,
+    policyId&&apiKey?buildApiDoc(policyId,apiKey,st):null,
+    el("label",{class:"field"},[el("span",{class:"label-text req"},["策略名称"]),nameIn,nameErr]),
+    el("label",{class:"field"},[el("span",{class:"label-text req"},["路由类型"]),typeSel,typeHint]),
+    el("div",{class:"form-sec"},["模型范围"]),
+    el("div",{class:"field"},[el("span",{class:"label-text req"},["候选模型",UI.help("该策略允许使用的模型范围；手动路由的终端用户选项也受此范围限制")]),wlWrap]),
+    fallbackField,
+    behaviorBox,
+  ]);
+  drawBehavior();
+  return{node,st,nameIn,nameErr};
+}
+
+function validatePolicyConfig(st){
+  if(!st.whitelist.size)return"请至少选择一个候选模型";
+  if(st.route_type!=="smart")return"";
+  if(!st.fallback)return"请选择兜底模型";
+  if(!st.router_model)return"请选择路由器模型";
+  if(st.domain_weight<0||st.domain_weight>1)return"专业领域能力权重需在 0 到 1 之间";
+  if(!COST_EFFECT_LEVELS.some(([value])=>value===st.alpha))return"成本—效果偏好必须选择 0、0.2、0.5、0.8 或 1";
+  if(st.allow_agg){const ws=[st.agg_task,st.agg_reasoning,st.agg_judgment];if(ws.some(v=>v<0||v>1)||Math.abs(ws.reduce((a,b)=>a+b,0)-1)>=0.001)return"聚合路由能力权重均需在 0 到 1 之间，且合计必须等于 1.00";}
+  return"";
+}
+
+function policyPayload(st,actives){
+  const params={route_type:st.route_type,default_aggregation:st.allow_agg?st.default_aggregation:"off"};
+  if(st.route_type==="smart")Object.assign(params,{fallback_model:st.fallback,router_model:st.router_model,alpha:st.alpha,beta:st.domain_weight,professional_domain_weight:st.domain_weight,allow_cost_effect_preference:!!st.allow_cost_preference,aggregation_weights:{task:st.agg_task,reasoning:st.agg_reasoning,judgment:st.agg_judgment}});
+  return{name:st.name.trim(),route_type:st.route_type,params,allow_aggregation:st.allow_agg?1:0,model_whitelist:st.whitelist.size===actives.length?[]:[...st.whitelist]};
+}
+
+
+async function newPolicyDialog(actives) {
+  if (!actives.length) { UI.toast("请先在「模型接入」里接入模型", true); return; }
+  const form = policyForm({}, actives);
+  const err = el("div", { class: "field-error" });
+  const mask2 = UI.modal("新增路由策略", el("div", {}, [form.node, err,
+    el("div", { style: "display:flex;justify-content:flex-end;gap:8px;margin-top:12px" }, [
+      el("button", { class: "btn", onclick: () => mask2.remove() }, ["取消"]),
+      el("button", { class: "btn primary", onclick: async (e) => {
+        if (!form.st.name.trim()) { form.nameErr.textContent = "请填写策略名称（1-15 字）"; form.nameIn.focus(); return; }
+        const invalid=validatePolicyConfig(form.st);if(invalid){err.textContent=invalid;return;}
+        await UI.withBusy(e.currentTarget, async () => {
+          try {
+            const body=policyPayload(form.st,actives);
+            const r = await UI.api("/v1/policies", { method: "POST", body });
+            mask2.remove(); renderDispatch();
+            const keyField = el("input", { type: "text", readonly: "", value: r.api_key,
+              style: "font-family:var(--font-mono);width:100%" });
+            const km = UI.modal("策略已创建", el("div", {}, [
+              el("div", { class: "muted", style: "margin-bottom:8px" }, ["新建路由策略即新建 API——你的产品带这个 Key 调用对话接口，就走这条策略："]),
+              el("div", { style: "display:flex;gap:10px" }, [keyField,
+                el("button", { class: "btn", onclick: () => { navigator.clipboard.writeText(r.api_key); UI.toast("已复制 API Key"); } }, ["复制"])]),
+              el("div", { style: "display:flex;justify-content:flex-end;margin-top:14px" }, [
+                el("button", { class: "btn primary", onclick: () => km.remove() }, ["完成"])]),
+            ]));
+          } catch (e2) { form.nameErr.textContent = e2.data?.error || e2.message; }
+        }, "创建中……");
+      } }, ["创建策略"]),
+    ]),
+  ]), null, { persistent: true });
+  setTimeout(() => form.nameIn.focus(), 100);
+}
+
+async function editPolicy(p, actives) {
+  const prm = p.params || {};
+  const form = policyForm({name:p.name,route_type:p.route_type||prm.route_type||"smart",router_model:prm.router_model||"",alpha:prm.alpha??0.5,domain_weight:prm.professional_domain_weight??prm.beta??0.5,
+    allow_agg:!!p.allow_aggregation,allow_cost_preference:prm.allow_cost_effect_preference!==false,
+    default_aggregation:prm.default_aggregation||"off",aggregation_weights:prm.aggregation_weights||{},whitelist:p.model_whitelist||[],fallback:prm.fallback_model||p.fallback_model||""},actives,p.policy_id,p.api_key);
+  const err = el("div", { class: "field-error" });
+  const foot = el("div", { style: "display:flex;gap:8px;justify-content:flex-end;align-items:center;width:100%" }, [
+    err, el("div", { style: "flex:1" }),
+    el("button", { class: "btn", onclick: () => mask2.querySelector(".close-btn")?.click() }, ["取消"]),
+    el("button", { class: "btn primary", onclick: async (e) => {
+      if (!form.st.name.trim()) { form.nameErr.textContent = "策略名称必填"; form.nameIn.focus(); return; }
+      const invalid=validatePolicyConfig(form.st);if(invalid){err.textContent=invalid;return;}
+      await UI.withBusy(e.currentTarget, async () => {
+        try {
+          const r=await UI.api(`/v1/policies/${p.policy_id}`,{method:"PUT",body:policyPayload(form.st,actives)});
+          UI.toast("路由策略已保存应用");
+          if (r && r.warning) setTimeout(() => UI.toast(r.warning, true), 1000);
+          mask2.querySelector(".close-btn")?.click();
+          renderDispatch();
+        } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+      }, "保存中……");
+    } }, ["保存应用"]),
+  ]);
+  const mask2 = UI.drawer("参数配置", form.node, foot);
+}
+
+async function renderPolicies(container, policies, actives) {
+  policies.forEach(p => {
+    const isDefault = p.scope === "global";
+    const prm = p.params || {};
+    const routeType=p.route_type||prm.route_type||"smart";
+    const wlN = (p.model_whitelist || []).length || actives.length;
+    const card = el("div", { class: "card policy-card", style: "margin-bottom:10px" }, [
+      el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" }, [
+        el("span", { style: "font-weight:700;font-size:var(--font-title)" }, [p.name || "未命名策略"]),
+        el("span",{class:routeType==="manual"?"chip gray":"chip blue"},[routeType==="manual"?"手动路由":"智能路由"]),
+        p.system_preset ? el("span",{class:"chip gray"},["系统预置"]):null,
+        p.enabled ? null : el("span", { class: "chip red" }, ["已停用"]),
+        el("div", { style: "flex:1" }),
+        el("button", { class: "btn small", onclick: (e) => { e.stopPropagation(); editPolicy(p, actives); } }, [UI.icon("sliders", 14), "参数配置"]),
+        (() => { const more = el("button", { class: "btn iconic round", title: "更多", "aria-label": "更多操作",
+          onclick: (e) => { e.stopPropagation(); UI.menu(more, [
+          { label: "复制", onClick: async () => {
+            try { const r = await UI.api(`/v1/policies/${p.policy_id}/duplicate`, { method: "POST" }); UI.toast(`已复制为「${r.name}」`); renderDispatch(); }
+            catch (e2) { UI.toast(e2.data?.error || e2.message, true); }
+          } },
+          { label: "重置 API Key", danger: true, onClick: async () => {
+            const ok = await UI.confirm("重置 API Key",
+              `为「${p.name}」生成新的 API Key：旧 Key 立即失效，仍在使用旧 Key 的调用会被明确拒绝——请在重置后立刻把新 Key 更新到你的调用方配置。适用于 Key 泄露或人员变动。`,
+              { okText: "重置", danger: true });
+            if (!ok) return;
+            try {
+              const r = await UI.api(`/v1/policies/${p.policy_id}/reset-key`, { method: "POST" });
+              const km = UI.modal("新的 API Key", el("div", {}, [
+                el("div", { class: "muted", style: "margin-bottom:10px" }, ["旧 Key 已失效。请立即复制新 Key 并更新到调用方配置："]),
+                el("button", { class: "key-chip", style: "width:100%;justify-content:space-between",
+                  onclick: () => { navigator.clipboard.writeText(r.api_key); UI.toast("已复制新 Key"); } },
+                  [el("span", { class: "num" }, [r.api_key]), UI.icon("copy", 12)]),
+                el("div", { style: "display:flex;justify-content:flex-end;margin-top:14px" }, [
+                  el("button", { class: "btn primary", onclick: () => { km.remove(); renderDispatch(); } }, ["我已保存"]),
+                ]),
+              ]));
+            } catch (e2) { UI.toast(e2.data?.error || e2.message, true); }
+          } },
+          !isDefault&&!p.system_preset ? { label: "删除", danger: true, onClick: async () => {
+            const ok = await UI.confirm("删除策略", `删除「${p.name}」后，使用它接入 Key 的调用将回落到默认策略。`, { okText: "删除", danger: true });
+            if (!ok) return;
+            try { await UI.api(`/v1/policies/${p.policy_id}/delete`, { method: "POST" }); UI.toast("已删除"); renderDispatch(); }
+            catch (e2) { UI.toast(e2.data?.error || e2.message, true); }
+          } } : null,
+        ]); } }, [UI.icon("more", 15)]); return more; })(),
+      ]),
+      el("div", { style: "display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap" }, [
+        el("span", { class: "cr-id num", title: "策略 ID（点击复制完整 ID）：" + p.policy_id,
+          onclick: (e) => { e.stopPropagation(); navigator.clipboard.writeText(p.policy_id); UI.toast("已复制策略 ID"); } },
+          ["ID:" + shortPolicyId(p.policy_id)]),
+        el("button", { class: "key-chip", title: "一条策略一个 API：点击复制完整 Key",
+          onclick: (e) => { e.stopPropagation(); navigator.clipboard.writeText(p.api_key); UI.toast("已复制 API Key"); } },
+          [el("span", { class: "num" }, ["API Key = sk-route-••••" + (p.api_key || "").slice(-4)]), UI.icon("copy", 12)]),
+      ]),
+      el("div", { class: "muted", style: "margin-top:8px" }, [
+        (() => {
+          const nameOfM = (id) => { const m = actives.find(x => x.model_id === id); return m ? m.display_name : id; };
+          const fb = prm.fallback_model || (actives.find(m => m.is_default) || {}).model_id;
+          const defaultAgg=prm.default_aggregation==="on"?"默认聚合":"默认不聚合";
+          if(routeType==="manual")return `候选模型 ${wlN} 个 · ${p.allow_aggregation?`终端用户可配置回答模型和聚合模型 · ${defaultAgg}`:"终端用户仅可配置回答模型"}`;
+          const costLabel=prm.allow_cost_effect_preference===false?`固定成本—效果权重 ${prm.alpha??0.5}`:`成本—效果偏好默认 ${prm.alpha??0.5}（终端可调）`;
+          const agg=prm.aggregation_weights||{task:0.6,reasoning:0.2,judgment:0.2};
+          return `候选模型 ${wlN} 个 · 路由器 ${prm.router_model?nameOfM(prm.router_model):"未配置"} · 专业领域权重 ${prm.professional_domain_weight??prm.beta??0.5} · ${costLabel} · ${p.allow_aggregation?`允许聚合 · ${defaultAgg}（${agg.task}/${agg.reasoning}/${agg.judgment}）`:"不聚合"} · 兜底 ${fb?nameOfM(fb):"-"}`;
+        })(),
+      ]),
+    ]);
+    container.appendChild(card);
+  });
+}
+
+function shortPolicyId(pid) {
+  const hex = String(pid).replace(/[^0-9a-f]/gi, "").slice(0, 8) || "0";
+  return String(parseInt(hex, 16) % 1000000).padStart(6, "0");
+}
+
+// ================= 模型画像（得分表 → 判维路由 → 效果换算）=================
+// ================= 模型画像（v7：benchmark 得分表 + 成本；智能路由模型判维） =================
+
+// 智能路由模型接入弹窗（硬依赖：未配置时线上请求一律直连兜底，不做智能路由）
+function routerModelDialog(existing, onSaved) {
+  if (document.querySelector(".modal-mask")) return;
+  const st = { model_id: existing?.model_id || "", display_name: existing?.display_name || "",
+               endpoint: existing?.endpoint || "", credential_ref: existing?.credential_ref || "" };
+  const fieldEl = (label, key, ph, hint) => {
+    const n = el("input", { type: "text", value: st[key] ?? "", placeholder: ph });
+    n.oninput = () => st[key] = n.value.trim();
+    return el("label", { class: "field" }, [
+      el("span", { class: "label-text req" }, [label, hint ? UI.help(hint) : null]), n]);
+  };
+  const err = el("div", { class: "field-error" });
+  const saveBtn = el("button", { class: "btn primary", onclick: async (e) => {
+    err.textContent = "";
+    if (!st.provider) { err.textContent = "请填写供应商"; return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(st.model_name)) { err.textContent = "模型型号需为 1-40 位字母、数字、点、下划线或短横线"; return; }
+    if (!st.display_name) { err.textContent = "请填写名称"; return; }
+    if (!/^https:\/\/\S+$/.test(st.endpoint)) { err.textContent = "接口地址必须是 https:// 开头的完整 URL"; return; }
+    if (!/^vault:\/\/\S+$/.test(st.credential_ref)) { err.textContent = "凭证需为 vault:// 引用（密钥不明文入库）"; return; }
+    await UI.withBusy(e.currentTarget, async () => {
+      await new Promise(r => setTimeout(r, 600)); // 演示：模拟连通性校验
+      try {
+        const { router } = await UI.api("/api/settings/router-model", { method: "POST", body: st });
+        UI.toast("连接校验通过，智能路由模型已保存");
+        mask.remove();
+        onSaved && onSaved(router);
+      } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+    }, "校验中……");
+  } }, ["连接校验并保存"]);
+  const body = el("div", {}, [
+    el("div", { class: "muted", style: "margin-bottom:12px" }, ["智能路由模型独立接入、不回答用户问题：每次请求先由它判定问题相关哪些 benchmark 维度（可多个），再按维度平均分选模型。建议接入低延迟的小模型。"]),
+    fieldEl("显示名", "display_name", "例如：Pilot-2B"),
+    fieldEl("模型 ID", "model_id", "例如：pilot-2b", "2-24 位小写字母、数字或短横线"),
+    fieldEl("接口地址", "endpoint", "https://api.example.com/v1/chat", "仅支持 https"),
+    fieldEl("凭证引用", "credential_ref", "vault://router/key-01", "密钥存放在凭证库，此处填引用"),
+    err,
+    el("div", { style: "display:flex;justify-content:flex-end;gap:8px;margin-top:16px" }, [
+      el("button", { class: "btn", onclick: () => mask.remove() }, ["取消"]),
+      saveBtn,
+    ]),
+  ]);
+  const mask = UI.modal(existing ? "更换智能路由模型" : "配置智能路由模型", body);
+}
+
+// 单格分数编辑：手动修正 / 标记缺失 / 恢复榜单值
+function scoreCellDialog(model, dim, cell, onDone) {
+  if (document.querySelector(".modal-mask")) return;
+  const inp = el("input", { type: "text", inputmode: "decimal", value: cell.raw == null ? "" : String(cell.raw),
+    placeholder: "0-100，留空并保存视为缺失", style: "width:120px" });
+  const err = el("div", { class: "field-error" });
+  const save = async (score) => {
+    try {
+      await UI.api("/api/benchmark/score", { method: "POST", body: { model_id: model.model_id, dim: dim.key, score } });
+      UI.toast(score == null ? "已标记缺失：路由计算平均分时跳过此维度" : "已修正，即改即生效");
+      mask.remove(); onDone && onDone();
+    } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+  };
+  const body = el("div", {}, [
+    el("div", { class: "muted", style: "margin-bottom:10px" },
+      [`${model.display_name} 在「${dim.label}」（${dim.bench}）的得分。` +
+       (cell.override ? "当前为手动修正值，可恢复榜单快照值。" : "榜单快照值，可按业务实测修正。")]),
+    el("label", { class: "field" }, [el("span", { class: "label-text" }, ["得分（0-100）"]), inp]),
+    err,
+    el("div", { style: "display:flex;gap:8px;margin-top:16px;align-items:center" }, [
+      cell.override ? el("button", { class: "btn small ghost", onclick: async () => {
+        try {
+          await UI.api("/api/benchmark/score/reset", { method: "POST", body: { model_id: model.model_id, dim: dim.key } });
+          UI.toast("已恢复榜单快照值"); mask.remove(); onDone && onDone();
+        } catch (e2) { err.textContent = e2.data?.error || e2.message; }
+      } }, ["恢复榜单值"]) : null,
+      el("div", { style: "flex:1" }),
+      el("button", { class: "btn", onclick: () => mask.remove() }, ["取消"]),
+      el("button", { class: "btn primary", onclick: () => {
+        const v = inp.value.trim();
+        if (v === "") { save(null); return; }
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 100) { err.textContent = "得分需为 0-100 的数字，或留空标记缺失"; return; }
+        save(n);
+      } }, ["保存"]),
+    ]),
+  ]);
+  const mask = UI.modal("修正得分", body);
+}
+
+// 路由效果表：benchmark 画像 + 策略 α 即时换算，每格 tooltip 显示构成
+async function buildEffectTable(policyId) {
+  const p = await UI.api("/api/profile" + (policyId ? "?policy_id=" + policyId : ""));
+  if (!(p.clusters || []).length) return el("div", { class: "empty-state" }, [
+    el("div", { class: "empty-title" }, ["暂无可换算的画像数据"]),
+    el("div", {}, ["先在「模型接入」启用至少一个模型"]),
+  ]);
+  const mids = Object.keys(p.clusters[0].scores || {});
+  const nameOf = m => (p.models || {})[m] || m;
+  return el("div", {}, [
+    el("div", { style: "overflow-x:auto" }, [el("table", { class: "data" }, [
+      el("thead", {}, [el("tr", {}, [
+        el("th", {}, ["问题维度"]), el("th", {}, ["基准"]),
+        ...mids.map(m => el("th", {}, [nameOf(m)])),
+        el("th", { class: "w-main" }, ["路由去向"]),
+      ])]),
+      el("tbody", {}, p.clusters.map(c => el("tr", {}, [
+        el("td", { style: "font-weight:600;white-space:nowrap" }, [c.label || c.domain]),
+        el("td", { class: "muted", style: "white-space:nowrap" }, [c.bench || "-"]),
+        ...mids.map(m => {
+          const sc2 = (c.scores || {})[m] || {};
+          const v = sc2.combined;
+          const isBest = m === c.best;
+          const tip = v == null ? "无此维度得分：路由计算平均分时跳过"
+            : `得分 ${sc2.raw}${sc2.override ? "（手动修正）" : ""} · 省钱 ${sc2.eff} · 综合 ${v}`;
+          return el("td", { class: "num", style: isBest && !c.agg_with ? "background:var(--primary-weak);font-weight:600;border-radius:4px" : "",
+            title: tip }, [v == null ? "-" : v.toFixed(2)]);
+        }),
+        el("td", { class: "w-main" }, [c.agg_with
+          ? el("span", { class: "chip ai", title: "两个模型综合分接近：都答一遍再由聚合模型总结定稿" }, [`聚合：${nameOf(c.best)} + ${nameOf(c.agg_with)}`])
+          : (c.best ? el("span", { class: "chip blue" }, [nameOf(c.best)]) : el("span", { class: "muted" }, ["-"]))]),
+      ]))),
+    ])]),
+    el("div", { class: "muted", style: "margin-top:10px;display:flex;align-items:center;flex-wrap:wrap" }, [
+      "综合分 = 权重 × (得分 ÷ 100) + (1 - 权重) × 省钱分；实际路由按判定维度取平均分再算",
+      UI.help("省钱分由各模型单价归一得出，最便宜为 1、最贵为 0。缺失得分的维度不参与该模型的平均分；某模型判定维度全部缺失时退出本次候选。表中为单一维度的换算，复合问题（判出多个维度）按平均分计算"),
+    ]),
+  ]);
+}
+
+async function renderProfile() {
+  const bm = await UI.api("/api/benchmark");
+  const box = content();
+  box.innerHTML = "";
+  const router = bm.router;
+
+  // 页头：画像规则折叠块
+  const rulesBlock = el("div", { class: "card explain-body", hidden: true, style: "margin-bottom:12px" }, [
+    el("p", {}, ["1. 画像构成：模型画像 = benchmark 得分表 + 成本。得分来自公开榜单快照，成本按接入单价归一为省钱分；静态配置，即改即生效，无需生成任务、零冷启动。"]),
+    el("p", {}, ["2. 智能判维：每次请求先由智能路由模型判定相关维度（可多个，如「算毛利再写分析」= 数学推理 + 长文写作），候选取这些维度的平均分，再按策略的成本-效果权重算综合分。"]),
+    el("p", {}, ["3. 修正与缺失：benchmark 不等于业务得分——自有部署、微调模型没有公开分，或榜单分与业务实测不符时，点击表格任意格修正；留空标记缺失，计算平均分时跳过该维度。"]),
+    el("p", {}, ["4. 未配置路由模型：无法判维，线上请求一律直连兜底模型并在决策里说明——得分表不生效，请尽快配置。"]),
+  ]);
+  const rulesBtn = el("button", { class: "btn small ghost", onclick: () => {
+    rulesBlock.hidden = !rulesBlock.hidden;
+    rulesBtn.classList.toggle("active", !rulesBlock.hidden);
+  } }, ["画像规则", UI.icon("chevron", 13)]);
+  document.getElementById("headActions").appendChild(rulesBtn);
+  box.appendChild(rulesBlock);
+
+  // 智能路由模型配置条（硬依赖警示）
+  box.appendChild(el("div", { class: "judge-bar" + (router ? "" : " missing") }, [
+    UI.icon(router ? "check" : "info", 16),
+    el("div", { style: "min-width:0" }, [
+      el("div", { style: "font-weight:600" }, [router ? `智能路由模型：${router.display_name || router.model_id}` : "还没配置智能路由模型"]),
+      el("div", { class: "muted", style: "font-size:var(--font-caption)" }, [router
+        ? "每次请求先由它判定相关维度，再按下表得分路由；判维一跳计入路由成本"
+        : "未配置时无法判维：线上请求一律直连兜底模型，下表得分不生效"]),
+    ]),
+    el("div", { style: "flex:1" }),
+    router
+      ? el("span", { style: "display:inline-flex;gap:8px" }, [
+          el("button", { class: "btn small", onclick: () => routerModelDialog(router, () => renderProfile()) }, ["更换"]),
+          el("button", { class: "btn small", onclick: async () => {
+            const ok = await UI.confirm("移除智能路由模型",
+              "移除后线上请求无法判维，一律直连兜底模型直到重新配置；得分表与策略配置保留不受影响。", { okText: "仍要移除", danger: true });
+            if (!ok) return;
+            try { await UI.api("/api/settings/router-model", { method: "POST", body: { model_id: "" } }); UI.toast("已移除：线上请求将直连兜底模型"); renderProfile(); }
+            catch (e) { UI.toast(e.data?.error || e.message, true); }
+          } }, ["移除"]),
+        ])
+      : el("button", { class: "btn primary", onclick: () => routerModelDialog(null, () => renderProfile()) }, ["配置智能路由模型"]),
+  ]));
+
+  // Benchmark 得分表（可点格修正）
+  const refreshBtn = el("button", { class: "btn small", onclick: async (e) => {
+    const benchList = (bm.dims || []).map(d => `${d.label} ${d.bench}`).join(" · ");
+    const ok = await UI.confirm("刷新榜单快照",
+      `将拉取以下公开榜单的最新得分并更新快照日期（当前快照 ${bm.asof}）：${benchList}。手动修正过的格保留、不被覆盖。`, { okText: "刷新" });
+    if (!ok) return;
+    await UI.withBusy(e.currentTarget, async () => {
+      try { const r = await UI.api("/api/benchmark/refresh", { method: "POST" }); UI.toast(`榜单快照已更新至 ${r.asof}`); renderProfile(); }
+      catch (e2) { UI.toast(e2.data?.error || e2.message, true); }
+    }, "刷新中……");
+  } }, ["刷新榜单快照"]);
+  const dimTh = d => el("th", { style: "white-space:nowrap" }, [d.label, UI.help(`${d.desc}。基准：${d.bench}`)]);
+  box.appendChild(el("div", { class: "card", style: "margin:12px 0" }, [
+    el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap" }, [
+      el("span", { style: "font-weight:600;font-size:var(--font-title)" }, ["Benchmark 得分表"]),
+      el("span", { class: "muted num" }, [`快照 ${bm.asof}`, UI.help(`来源：${bm.source}。快照期后发布的新模型分数需刷新或手动填入`)]),
+      el("div", { style: "flex:1" }),
+      refreshBtn,
+    ]),
+    el("div", { class: "muted", style: "margin-bottom:10px" },
+      ["点击任意格可修正得分或标记缺失（自有部署 / 微调模型无公开分时手动补录）；修正即改即生效，带下划线的格为手动修正值"]),
+    !(bm.models || []).length
+      ? el("div", { class: "empty-state" }, [
+          el("div", { class: "empty-title" }, ["还没有在线模型"]),
+          el("div", {}, ["先在「模型接入」启用至少一个模型，得分表与路由效果会自动出现"]),
+          el("a", { class: "btn primary", style: "margin-top:12px", href: "./router.html#models" }, ["接入模型"]),
+        ])
+      :     el("div", { style: "overflow-x:auto" }, [el("table", { class: "data" }, [
+      el("thead", {}, [el("tr", {}, [
+        el("th", {}, ["模型"]), el("th", {}, ["单价（入/出 ¥/M）"]),
+        ...bm.dims.map(dimTh),
+      ])]),
+      el("tbody", {}, (bm.models || []).map(m => el("tr", {}, [
+        el("td", { style: "font-weight:600;white-space:nowrap" }, [m.display_name]),
+        el("td", { class: "muted num", style: "white-space:nowrap" }, [`${m.price_input} / ${m.price_output}`]),
+        ...bm.dims.map(d => {
+          const raw = (bm.scores[m.model_id] || {})[d.key];
+          const ov = d.key in ((bm.overrides || {})[m.model_id] || {});
+          const cell = el("td", { class: "num", tabindex: "0", role: "button",
+            style: "cursor:pointer" + (ov ? ";text-decoration:underline dotted;text-underline-offset:3px" : ""),
+            title: raw == null ? "无公开得分：路由计算平均分时跳过。点击可补录" : (ov ? "手动修正值，点击可再改或恢复榜单值" : "榜单快照值，点击可修正"),
+            onclick: () => scoreCellDialog(m, d, { raw, override: ov }, () => renderProfile()) },
+            [raw == null ? "-" : String(raw)]);
+          cell.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); cell.click(); } };
+          return cell;
+        }),
+      ]))),
+    ])]),
+  ]));
+
+  // 路由效果（按策略换算）
+  box.appendChild(el("div", { style: "display:flex;align-items:center;gap:10px;margin:16px 0 8px;padding-right:16px" }, [
+    el("span", { class: "section-title", style: "margin:0" }, ["路由效果"]),
+    el("span", { class: "muted" }, ["各策略按成本-效果权重即时换算，改分数立即反映"]),
+    el("div", { style: "flex:1" }),
+  ]));
+  const effCard = el("div", { class: "card" });
+  box.appendChild(effCard);
+  const polSel = el("div", {});
+  const tblBox = el("div", {});
+  effCard.appendChild(el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap" }, [
+    el("span", { class: "muted", style: "flex:none" }, ["按策略换算"]),
+    polSel,
+  ]));
+  effCard.appendChild(tblBox);
+  const loadTable = async (pid) => {
+    UI.loading(tblBox);
+    try { tblBox.innerHTML = ""; tblBox.appendChild(await buildEffectTable(pid)); }
+    catch (e2) { tblBox.innerHTML = ""; tblBox.appendChild(el("div", { class: "field-error" }, ["加载失败：" + e2.message])); }
+  };
+  try {
+    const { policies } = await UI.api("/v1/policies");
+    const pols = (policies || []).filter(p2 => p2.enabled && !p2.ab_group);
+    const first = pols.find(p2 => p2.scope === "global") || pols[0];
+    polSel.appendChild(UI.fancySelect({ value: first ? first.policy_id : "", width: "220px",
+      options: pols.map(p2 => [p2.policy_id, p2.name]),
+      onChange: (v) => loadTable(v) }));
+    await loadTable(first ? first.policy_id : null);
+  } catch (e2) { await loadTable(null); }
+}
+
+// ================= 接入文档（对接开发视角的完整口径） =================
+
+function docCard(title, children) {
+  return el("div", { class: "card", style: "margin-bottom:12px" }, [
+    el("div", { style: "font-weight:600;font-size:var(--font-title);margin-bottom:8px" }, [title]),
+    ...children,
+  ]);
+}
+function docPre(text) {
+  const pre = el("pre", { class: "num", style: "margin:0;background:var(--bg-sunken);border-radius:8px;padding:10px 12px;" +
+    "font-size:var(--font-caption);line-height:1.6;white-space:pre-wrap;overflow-x:auto" }, [text]);
+  return el("div", {}, [pre,
+    el("div", { style: "display:flex;justify-content:flex-end;margin-top:6px" }, [
+      el("button", { class: "btn small ghost", onclick: () => { navigator.clipboard.writeText(text); UI.toast("已复制"); } },
+        [UI.icon("copy", 12), "复制"]),
+    ])]);
+}
+function docTable(heads, rows) {
+  return el("div", { style: "overflow-x:auto" }, [el("table", { class: "data" }, [
+    el("thead", {}, [el("tr", {}, heads.map((h, i) => el("th", { class: i === heads.length - 1 ? "w-main" : "" }, [h])))]),
+    el("tbody", {}, rows.map(r => el("tr", {}, r.map((c, i) => el("td", { class: i === 0 ? "num" : (i === r.length - 1 ? "w-main" : "") },
+      [typeof c === "string" ? c : c]))))),
+  ])]);
+}
+
+async function renderApiDocPage() {
+  const box = content();
+  box.innerHTML = "";
+  const curl = [
+    'curl -N https://api.example.com/v1/route \\',
+    '  -H "Content-Type: application/json" \\',
+    "  -d '{",
+    '    "api_key": "sk-route-****",',
+    '    "text": "帮我算下这单的毛利率再写一段分析",',
+    '    "aggregate": "auto",',
+    '    "session_id": "sess-001",',
+    '    "user_id": "user-001"',
+    "  }'",
+  ].join("\n");
+  box.appendChild(el("div", { class: "muted", style: "margin:4px 0 12px" },
+    ["面向对接开发：一条路由策略 = 一个 API Key，带 Key 调用即按对应策略路由。以下为完整请求 / 返回口径，每块可复制。演示环境地址以实际部署为准。"]));
+
+  box.appendChild(docCard("1 · 快速开始", [
+    el("div", { class: "muted", style: "margin-bottom:10px" },
+      ["第一步：在「路由策略」页复制策略卡上的 API Key；第二步：POST /v1/route 发起对话（SSE 流式返回）；第三步：逐行解析 data: 事件，final 事件即最终回答。"]),
+    docPre(curl),
+  ]));
+
+  box.appendChild(docCard("2 · 请求参数", [
+    docTable(["字段", "必填", "说明"], [
+      ["api_key", "是", "策略凭证，形如 sk-route-****。Key 无效或已被重置时请求被明确拒绝（final 事件 error=invalid_api_key），不会回落到其他策略"],
+      ["text", "是", "用户的问题原文"],
+      ["answer_models", "手动路由必填", "终端用户从策略候选模型范围内指定一个或多个回答模型"],
+      ["aggregate", "否", "auto 采用策略配置的默认回答方式 / on 聚合 / off 不聚合；策略不允许聚合时 on 不生效"],
+      ["aggregator_model", "手动聚合时选填", "手动路由允许聚合时，由终端用户从候选范围内指定聚合模型"],
+      ["session_id", "否", "会话标识，用于多轮上下文与会话级统计"],
+      ["user_id", "否", "终端用户标识，用于配额与行为统计"],
+    ]),
+  ]));
+
+  box.appendChild(docCard("3 · 流式事件（SSE）", [
+    el("div", { class: "muted", style: "margin-bottom:10px" }, ["响应为 text/event-stream，每行一个 JSON 事件，按 step 字段区分："]),
+    docTable(["step", "含义"], [
+      ["rule", "硬规则层命中：多模态按能力过滤 / 日常闲聊轻量直答 / 未配置智能路由模型时的兜底说明"],
+      ["dims", "智能路由模型判定的相关 benchmark 维度（dims 数组），附判维耗时与成本"],
+      ["coarse", "候选综合分：判定维度平均得分 × 成本-效果权重的排序结果（scores）"],
+      ["fastlane", "综合分领先，单模型直接作答"],
+      ["calling", "综合分接近或请求强制聚合：多候选并发作答（models 数组）"],
+      ["model_done", "某个候选模型返回（model / status / latency_ms）"],
+      ["switch", "聚合定稿：保留的回答交给聚合模型总结（result=aggregated）"],
+      ["degrade", "候选异常，切换兜底模型"],
+      ["final", "最终结果：content 正文 + request_id + applied + decision_summary；出错时带 error 字段"],
+    ]),
+  ]));
+
+  box.appendChild(docCard("4 · final 事件字段", [
+    docTable(["字段", "说明"], [
+      ["content", "回答正文"],
+      ["request_id", "本次请求编号，问题排查与对账用"],
+      ["applied", "本次实际生效口径：{ route_type, aggregate, aggregation_used, policy_id }。配额降级、聚合关闭等都会如实反映在这里"],
+      ["decision_summary", "路由决策摘要：route_layer 命中层级（rule / dims / no_router / else）、dimensions 判定维度列表、candidates 候选、aggregator 聚合模型、model_calls 逐模型成本"],
+      ["usage", "本次消耗：{ cost, tokens }"],
+      ["error", "仅出错时出现：invalid_api_key（Key 无效或已重置）/ all_models_failed（候选与兜底均不可用）等"],
+    ]),
+  ]));
+
+  box.appendChild(docCard("5 · 聚合参数与成本约束", [
+    el("div", { class: "muted" }, [
+      "策略开启「允许聚合」后还需配置默认回答方式；aggregate=auto 或未传时采用该默认值，on 表示聚合，off 表示不聚合。策略关闭「允许聚合」时 on 不生效；手动路由开启聚合后，终端用户可同时指定 answer_models 与 aggregator_model。聚合成本通常高于单模型调用，调用方应始终读取 applied 确认实际生效结果。",
+    ]),
+  ]));
+
+  box.appendChild(docCard("6 · Key 治理与稳态", [
+    docTable(["场景", "行为与建议"], [
+      ["Key 泄露 / 人员变动", "策略卡「更多 → 重置 API Key」：旧 Key 立即失效，新 Key 弹窗展示一次，请立即更新调用方配置"],
+      ["Key 无效或已重置", "请求被明确拒绝（final.error=invalid_api_key），不会静默回落其他策略——收到该错误应停止重试并检查 Key 配置"],
+      ["未配置智能路由模型", "请求直连兜底模型作答，decision_summary.route_layer=no_router；管理员应尽快在「模型画像」页完成配置"],
+      ["候选模型异常", "自动切换兜底直连；兜底也失败时 final.error=all_models_failed，明确报错不做循环重试，建议调用方指数退避后重试"],
+    ]),
+  ]));
+}
+
+async function renderDispatch() {
+  const box = content();
+  box.innerHTML = "";
+  const [{ models }, { policies: allPolicies }] = await Promise.all([
+    UI.api("/v1/models").catch(() => ({ models: [] })),
+    UI.api("/v1/policies"),
+  ]);
+  const actives = (models || []).filter(m => m.status === "active");
+  const policies = (allPolicies || []).filter(p2 => !p2.ab_group);
+  const presetOrder={"policy-manual":0,"policy-global-balanced":1,"policy-scene-fast":2,"policy-scene-quality":3};
+  policies.sort((x,y)=>(presetOrder[x.policy_id]??10)-(presetOrder[y.policy_id]??10));
+
+  // 无模型空态：先引导接入
+  if (!actives.length) {
+    box.appendChild(el("div", { class: "card empty-state" }, [
+      el("div", { class: "empty-title" }, ["还没有可用的模型"]),
+      el("div", {}, ["路由策略负责在多个模型之间做选择——先接入至少一个模型"]),
+      el("a", { class: "btn primary", style: "margin-top:12px", href: "./router.html#models" }, ["接入模型"]),
+    ]));
+    return;
+  }
+
+  const rulesBlock = el("div", { class: "card explain-body", hidden: true, style: "margin-bottom:10px" }, [
+    el("p", {}, ["1. 路由类型：智能路由由系统根据模型画像、专业领域和成本—效果偏好自动选模型；手动路由由终端用户从策略候选范围内指定回答模型，策略允许聚合时还可指定聚合模型。"]),
+    el("p", {}, ["2. 智能路由：先按输入能力执行硬过滤，再识别任务类型与专业领域；专业领域权重用于修正任务质量，随后按成本—效果权重计算综合分。未配置智能路由模型时直接使用兜底模型。"]),
+    el("p", {}, ["3. 聚合路由：开启允许聚合后需设置默认聚合或默认不聚合；智能路由按聚合能力权重选择聚合模型，手动路由由终端用户配置回答模型和聚合模型。终端用户未指定时采用策略默认回答方式。"]),
+    el("p", {}, ["4. 兜底：智能路由的候选模型全部失败或判定无有效结果时切换兜底模型；手动路由不配置兜底模型，终端用户指定的回答模型调用失败时直接报错。"]),
+    el("p", {}, ["5. 成本—效果偏好：允许配置时，策略权重作为终端用户未指定偏好时的初始默认值；关闭配置时，该权重固定生效。0 只看成本，0.5 均衡，1 只看效果。"]),
+  ]);  const rulesBtn = el("button", { class: "btn small ghost", onclick: () => {
+    rulesBlock.hidden = !rulesBlock.hidden;
+    rulesBtn.classList.toggle("active", !rulesBlock.hidden);
+  } }, ["模型路由规则", UI.icon("chevron", 13)]);
+  document.getElementById("headActions").appendChild(rulesBtn);
+  box.appendChild(el("div", { style: "display:flex;align-items:center;gap:8px;margin:6px 0 10px" }, [
+    el("span", { class: "muted" }, ["一条策略 = 一个 API，用 Key 区分"]),
+    el("div", { style: "flex:1" }),
+    el("button", { class: "btn primary", onclick: () => newPolicyDialog(actives) }, [UI.icon("plus", 14), "新增路由策略"]),
+  ]));
+  // 三层路由一行式示意：让首次用户不点「模型路由规则」也能看懂路由怎么走
+  box.appendChild(el("div", { class: "card", style: "margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px" }, [
+    el("span", { class: "muted", style: "flex:none" }, ["智能路由："]),
+    el("span", { class: "chip blue", title: "多模态等功能需求按能力分流；日常闲聊轻量直答" }, ["1 硬规则"]),
+    el("span", { class: "muted" }, ["→"]),
+    el("span", { class: "chip blue", title: "智能路由模型判定问题相关的 benchmark 维度，按维度平均得分与成本选模型；综合分接近可聚合" }, ["2 智能判维"]),
+    el("span", { class: "muted" }, ["→"]),
+    el("span", { class: "chip blue", title: "判定维度全部缺分或调用异常时，兜底模型直连" }, ["3 else 兜底"]),
+    el("span", { class: "muted", style: "margin-left:4px" }, ["详细规则见右上角「模型路由规则」"]),
+    el("span",{style:"flex-basis:100%;height:0"},[]),
+    el("span",{class:"muted",style:"flex:none"},["手动路由："]),
+    el("span",{class:"chip gray"},["终端用户选回答模型"]),el("span",{class:"muted"},["→"]),el("span",{class:"chip gray"},["可选聚合模型"]),el("span",{class:"muted"},["→"]),el("span",{class:"chip gray"},["失败则报错"]),
+  ]));
+  box.appendChild(rulesBlock);
+  const listBox = el("div", {});
+  box.appendChild(listBox);
+  renderPolicies(listBox, policies, actives);
+
+}
+// v8 节点级模型接入：画像配置统一移至「模型画像」页。
+const nodeMeta = m => { const c = m.capabilities || {}; return {
+  // 旧演示数据没有 node_id：按 API 提供平台归入同一节点，确保多模型节点可直接演示展开/收起。
+  node_id: c.node_id || `legacy-provider-${m.provider || m.model_id}`, node_name: c.node_name || `${m.provider || "默认"} API 节点`,
+  model_series: c.model_series || m.model_name || m.model_id, model_brand: c.model_brand || m.provider,
+  api_protocol: c.api_protocol || "OpenAI", api_type: c.api_type || (!c.node_id && String(m.provider).toLowerCase()==="mocklab" ? "private" : (m.deploy_type === "self_hosted" ? "private" : "public"))
+}; };
+const billingTypeLabel = type => type === "private" ? "内部固定资源" : type === "package" ? "按固定套餐计费" : "按使用量计费";
+const expandedModelNodes = new Set();
+let modelNodeSearch = "";
+async function renderModelNodes() {
+  const { models } = await UI.api("/v1/models");
+  const box = content(); box.innerHTML = "";
+  const groups = new Map();
+  models.forEach(m => { const k = nodeMeta(m).node_id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); });
+  const q=modelNodeSearch.trim().toLowerCase();
+  const rows = [...groups.values()].filter(group=>{const x=nodeMeta(group[0]);return !q||`${x.node_name} ${group[0].provider||""} ${x.model_brand||""}`.toLowerCase().includes(q);}).sort((a, b) => nodeMeta(a[0]).node_name.localeCompare(nodeMeta(b[0]).node_name));
+  const nodeActions = group => {
+    const more = el("button", { class: "btn small", "aria-label": "更多操作", onclick: e => {
+      e.stopPropagation(); UI.menu(more, [
+        { label: "复制", onClick: () => modelNodeDialog(group, true) },
+        { label: "删除", danger: true, onClick: () => deleteModelNode(group) },
+      ]);
+    } }, ["更多"]);
+    return el("div", { class: "row-actions" }, [
+      el("button", { class: "btn small", onclick: () => modelNodeDialog(group) }, ["编辑"]), more,
+    ]);
+  };
+  const modelNameCell = (m, group, first, expanded) => {
+    const x = nodeMeta(group[0]), hasMore = group.length > 1;
+    const arrow = hasMore && first ? el("button", { class: "btn ghost", style: "padding:0;min-width:24px;width:24px;height:24px;border:0;font-size:15px;font-weight:700;color:var(--text-secondary)", title: expanded ? "收起模型名称" : "展开全部模型名称", "aria-label": expanded ? "收起模型名称" : "展开全部模型名称", onclick: () => { expanded ? expandedModelNodes.delete(x.node_id) : expandedModelNodes.add(x.node_id); renderModelNodes(); } }, [expanded ? "▼" : "▶"]) : el("span", { style: "display:inline-block;width:24px" }, []);
+    return el("td", { class: "num" }, [el("span", { style: "display:inline-flex;align-items:center;gap:4px;white-space:nowrap" }, [arrow, m.model_name || m.model_id, (!expanded && hasMore) ? el("span", { class: "muted", title: `另有 ${group.length - 1} 个模型`, style: "font-weight:700;letter-spacing:2px" }, ["…"]) : null])]);
+  };
+  const bodyRows = rows.flatMap(group => {
+    group.sort((a,b) => String(a.model_name).localeCompare(String(b.model_name)));
+    const x = nodeMeta(group[0]), expanded = expandedModelNodes.has(x.node_id), shown = expanded ? group : group.slice(0, 1);
+    return shown.map((m, i) => {
+      const first = i === 0, cells = [], nodeModel = group[0];
+      const span = expanded ? group.length : 1;
+      if (first) cells.push(
+        el("td", { rowspan: String(span), style: "font-weight:600;vertical-align:top;min-width:150px" }, [x.node_name]),
+        el("td", { rowspan: String(span), style: "vertical-align:top" }, [nodeModel.provider || "-"]));
+      cells.push(modelNameCell(m, group, first, expanded));
+      if (first) cells.push(
+        el("td", { rowspan: String(span), style: "vertical-align:top" }, [x.model_series || "-"]),
+        el("td", { rowspan: String(span), style: "vertical-align:top" }, [x.model_brand || "-"]),
+        el("td", { rowspan: String(span), class: "num", title: nodeModel.endpoint || "", style: "vertical-align:top;max-width:220px;overflow:hidden;text-overflow:ellipsis" }, [nodeModel.endpoint || "-"]),
+        el("td", { rowspan: String(span), style: "vertical-align:top" }, [x.api_protocol]),
+        el("td", { rowspan: String(span), style: "vertical-align:top" }, [billingTypeLabel(x.api_type)]));
+      if (first) cells.push(el("td", { rowspan: String(span), style: "vertical-align:top" }, [nodeActions(group)]));
+      return el("tr", {}, cells);
+    });
+  });
+  if(!bodyRows.length)bodyRows.push(el("tr",{},[el("td",{colspan:"9",class:"muted",style:"text-align:center;padding:28px"},[q?"没有匹配的节点":"暂无节点"])]));
+  const table = el("table", { class: "data" }, [el("thead", {}, [el("tr", {}, ["节点名称", "API 提供平台", "模型名称", "模型系列", "模型品牌", "Base URL", "API 协议", "计费类型", "操作"].map(h => el("th", {}, [h])))]), el("tbody", {}, bodyRows)]);
+  const search=el("input",{type:"text",value:modelNodeSearch,placeholder:"搜索节点名称、API 提供平台或模型品牌",style:"width:300px;max-width:100%"});
+  search.onkeydown=e=>{if(e.key==="Enter"){modelNodeSearch=search.value.trim();renderModelNodes();}};
+  box.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px"},[
+    el("div",{style:"display:flex;align-items:center;gap:8px;flex-wrap:wrap"},[search,el("button",{class:"btn",onclick:()=>{modelNodeSearch=search.value.trim();renderModelNodes();}},["搜索"])]),
+    el("button", { class: "btn primary", onclick: () => modelNodeDialog() }, [UI.icon("plus", 14), "添加节点"])
+  ]));
+  box.appendChild(el("div", { class: "card" }, [el("div", { style: "margin-bottom:10px" }, [el("div", { class: "section-title", style: "margin:0" }, ["模型节点"]), el("div", { class: "muted", style: "margin-top:4px" }, ["一个节点可接入多个模型；每行展示一个模型，节点信息合并显示。模型能力、成本和质量请到「模型画像」配置。"])]), table]));
+}
+function modelNodeDialog(group=null,copying=false){if(document.querySelector(".modal-mask"))return;const first=group?.[0],meta=first?nodeMeta(first):{};const st={node_id:copying||!first?`node-${Date.now().toString(36)}`:meta.node_id,node_name:copying?`${meta.node_name} 副本`:(meta.node_name||""),provider:first?.provider||"",model_names:group?group.map(m=>m.model_name||m.model_id):[""],model_series:meta.model_series||"",model_brand:meta.model_brand||"",endpoint:first?.endpoint||"",api_key:"",api_protocol:"OpenAI",api_type:meta.api_type||"public"};const err=el("div",{class:"field-error"});const field=(label,key,ph,type="text",hint="")=>{const n=el("input",{type,value:st[key]||"",placeholder:ph});n.oninput=()=>st[key]=n.value.trim();return el("label",{class:"field"},[el("span",{class:"label-text req"},[label,hint?UI.help(hint):null]),n]);};const namesBox=el("div",{class:"form-loose"});const drawNames=()=>{namesBox.innerHTML="";st.model_names.forEach((v,i)=>{const n=el("input",{type:"text",value:v,placeholder:"例如：claude-sonnet-4.5",style:"flex:1"});n.oninput=()=>st.model_names[i]=n.value.trim();namesBox.appendChild(el("div",{style:"display:flex;gap:8px;align-items:center"},[n,el("button",{class:"btn small ghost",type:"button",disabled:st.model_names.length===1,onclick:()=>{st.model_names.splice(i,1);drawNames();}},["移除"])]));});};drawNames();const typeSel=UI.fancySelect({value:st.api_type,width:"100%",options:[["public","按使用量计费"],["package","按固定套餐计费"],["private","内部固定资源"]],onChange:v=>st.api_type=v});const save=el("button",{class:"btn primary",onclick:async e=>{err.textContent="";const names=[...new Set(st.model_names.map(x=>x.trim()).filter(Boolean))];if(!st.node_name)return err.textContent="请填写节点名称";if(!st.provider)return err.textContent="请填写 API 提供平台";if(!names.length)return err.textContent="请至少填写一个模型名称";if(!st.model_series||!st.model_brand)return err.textContent="请填写模型系列和模型品牌";if(!/^https:\/\/\S+$/.test(st.endpoint))return err.textContent="Base URL 必须是 https:// 开头的完整地址";if((!first||copying)&&!st.api_key)return err.textContent="请填写 API Key";await UI.withBusy(e.currentTarget,async()=>{try{const payload={...st,model_names:names};if(first&&!copying)await UI.api(`/v1/model-nodes/${encodeURIComponent(st.node_id)}`,{method:"PUT",body:payload});else await UI.api("/v1/model-nodes",{method:"POST",body:payload});UI.toast(first&&!copying?"节点已更新":`节点已保存，共添加 ${names.length} 个模型`);mask.remove();renderModelNodes();}catch(ex){err.textContent=ex.data?.error||ex.message;}},"保存中……");}},[first&&!copying?"保存修改":"保存节点"]);const body=el("div",{class:"form-loose"},[el("div",{class:"sec-head"},["1. 基本信息"]),el("div",{class:"grid cols-2"},[field("节点名称","node_name","例如：Claude 生产节点","text","同一套 API 接入配置的名称"),field("API 提供平台","provider","例如：Anthropic / Azure / 自研")]),el("div",{class:"grid cols-2"},[field("模型系列","model_series","例如：Claude Sonnet 4"),field("模型品牌","model_brand","例如：Anthropic")]),el("div",{class:"field"},[el("span",{class:"label-text req"},["模型名称",UI.help("可添加多个；保存后每个模型在列表中占一行")]),namesBox,el("button",{class:"btn small ghost",type:"button",style:"margin-top:8px",onclick:()=>{st.model_names.push("");drawNames();}},[UI.icon("plus",13),"添加模型名称"])]),el("div",{class:"sec-head",style:"margin-top:8px"},["2. API 接入信息"]),field("Base URL","endpoint","https://api.provider.com/v1","url","暂不进行连接测试"),field("API Key","api_key",first&&!copying?"留空则保持原 Key":"sk-...","password","保存后仅显示掩码"),el("div",{class:"grid cols-2"},[el("label",{class:"field"},[el("span",{class:"label-text req"},["API 协议",UI.help("使用默认 OpenAI 协议，不可修改")]),el("input",{type:"text",value:"OpenAI",readonly:true,"aria-readonly":"true"})]),el("label",{class:"field"},[el("span",{class:"label-text req"},["计费类型"]),typeSel])]),el("div",{class:"muted"},["此处只保存接入信息，不测试连接。模型画像在下一步单独配置。"]),err,el("div",{style:"display:flex;justify-content:flex-end;gap:8px"},[el("button",{class:"btn",onclick:()=>mask.remove()},["取消"]),save])]);const mask=UI.modal(copying?"复制节点":(first?"编辑节点":"添加节点"),body,null,{persistent:true});}
+async function deleteModelNode(group){const x=nodeMeta(group[0]);const ok=await UI.confirm("删除节点",`确定删除节点「${x.node_name}」及其 ${group.length} 个模型？历史调用记录会保留。`,{okText:"删除节点",danger:true});if(!ok)return;try{await UI.api(`/v1/model-nodes/${encodeURIComponent(x.node_id)}/delete`,{method:"POST",body:{model_ids:group.map(m=>m.model_id)}});UI.toast("节点已删除");renderModelNodes();}catch(e){UI.toast(e.data?.error||e.message,true);}}
+
+// v8 模型画像总表：每行一个模型，按功能 / 成本 / 任务质量 / 专业领域分组维护。
+const PROFILE_STORE_KEY = "router-demo-model-profiles-v8";
+let profileTab = "features";
+let profileSearch = "";
+let profileSort = { key: "", direction: "asc" };
+const profileFilters = { node_name: "", provider: "", model_series: "", model_brand: "" };
+const QUALITY_FIELDS = [
+  ["coding", "代码能力"], ["reasoning", "复杂推理"], ["creative", "创意写作"],
+  ["judgment", "研判写作"], ["data", "数据分析"], ["planning", "多步规划/工具调用"]
+];
+const QUALITY_LEVELS = [[1,"很强"],[0.75,"强"],[0.5,"中性"],[0.25,"较弱"],[0,"弱"]];
+const DOMAIN_OPTIONS = ["医疗健康","法律合规","金融财经","政务公共服务","学科教育","科研学术","工业制造"];
+function savedProfiles(){try{return JSON.parse(localStorage.getItem(PROFILE_STORE_KEY)||"{}");}catch(_){return {};}}
+function isMainstreamModel(m){const s=`${m.model_name||""} ${nodeMeta(m).model_series||""} ${nodeMeta(m).model_brand||""}`.toLowerCase();return /(gpt|claude|gemini|qwen|deepseek|llama|mistral|nova|atlas|sage|swift)/.test(s);}
+function builtInQuality(m){const s=String(m.model_name||"").toLowerCase();let q={coding:.75,reasoning:.75,creative:.75,judgment:.75,data:.75,planning:.75};if(/swift|mini|flash|haiku/.test(s))q={coding:.5,reasoning:.5,creative:.5,judgment:.5,data:.5,planning:.5};if(/sage|r1|reason/.test(s))q={coding:.75,reasoning:1,creative:.5,judgment:.75,data:1,planning:.75};if(/nova|gpt|claude|atlas/.test(s))q={coding:.75,reasoning:1,creative:.75,judgment:1,data:.75,planning:.75};return q;}
+function defaultModelProfile(m){const main=isMainstreamModel(m),caps=m.capabilities||{},ctx=Number(caps.context_window)||null;return {
+  source:main?"builtin":"generic",confirmed:false,
+  features:{text_input:true,text_output:true,image:main?!!caps.vision:false,image_output:main?!!caps.image_output:false,tool:main?!!caps.tool_call:false,thinking:main?!!caps.thinking:false,context:main?ctx:null,output:main?(Number(caps.max_output_tokens)||(ctx?Math.min(32768,Math.round(ctx/4)):8192)):null},
+  cost:{currency:"RMB",input:Number(m.price_input)||null,output:Number(m.price_output)||null,image_price:null,package_token_limit:null,package_overage_available:null,package_overage_input:null,package_overage_output:null,private_method:nodeMeta(m).api_type==="private"?"bought_out":"",resource_billing:null,monthly_fee:null},
+  quality:main?builtInQuality(m):Object.fromEntries(QUALITY_FIELDS.map(([k])=>[k,.5])),domains:[]
+};}
+function modelProfile(m){const base=defaultModelProfile(m),saved=savedProfiles()[m.model_id];if(!saved)return base;const features={...base.features,...saved.features};if(saved.features&&saved.features.text!==undefined){if(saved.features.text_input===undefined)features.text_input=!!saved.features.text;if(saved.features.text_output===undefined)features.text_output=!!saved.features.text;}const merged={...base,...saved,features,cost:{...base.cost,...saved.cost},quality:{...base.quality,...saved.quality}};if(nodeMeta(m).api_type==="private"){merged.cost.private_method="bought_out";merged.cost.resource_billing=null;merged.cost.monthly_fee=null;}return merged;}
+function persistModelProfile(mid,p){const all=savedProfiles();all[mid]={...p,source:"user",confirmed:true};localStorage.setItem(PROFILE_STORE_KEY,JSON.stringify(all));}
+function resetModelProfile(mid){const all=savedProfiles();delete all[mid];localStorage.setItem(PROFILE_STORE_KEY,JSON.stringify(all));}
+function profileStatus(p,m){if(!p.features.context||!p.features.output||profileMissingTabs(m,p).includes("成本画像"))return "待完善";if(p.source==="user")return "已修改";return p.confirmed?"已完善":"待确认";}
+function profileMissingTabs(m,p){const tabs=[];
+  if(!p.confirmed||!p.features.context||!p.features.output)tabs.push("功能画像");
+  const billingType=nodeMeta(m).api_type;
+  const costMissing=billingType==="private"
+    ?false
+    :billingType==="package"
+      ?(!Number.isInteger(p.cost.package_token_limit)||p.cost.package_token_limit<=0||p.cost.package_overage_available==null||(p.cost.package_overage_available&&(p.cost.package_overage_input==null||p.cost.package_overage_output==null)))
+      :(p.cost.input==null||p.cost.output==null||(p.features.image_output&&p.cost.image_price==null));
+  if(costMissing)tabs.push("成本画像");
+  if(!p.confirmed||QUALITY_FIELDS.some(([k])=>p.quality[k]==null))tabs.push("任务画像");
+  return tabs;
+}
+const yesNo = v => v?el("span",{class:"chip green"},["支持"]):el("span",{class:"muted"},["不支持"]);
+const qualityLabel = v => (QUALITY_LEVELS.find(x=>x[0]===Number(v))||[null,"中性"])[1];
+const tokenLabel = v => !v?"待填写":v>=1048576?`${(v/1048576).toFixed(v%1048576?1:0)}M`:v>=1024?`${Math.round(v/1024)}K`:String(v);
+function profileGroupCells(p,m){
+  if(profileTab==="features")return [yesNo(p.features.text_input),yesNo(p.features.text_output),yesNo(p.features.image),yesNo(p.features.image_output),yesNo(p.features.tool),yesNo(p.features.thinking),tokenLabel(p.features.context),tokenLabel(p.features.output)];
+  if(profileTab==="cost"){
+    const billingType=nodeMeta(m).api_type,privateApi=billingType==="private",packageApi=billingType==="package",usageApi=!privateApi&&!packageApi;
+    return [billingTypeLabel(billingType),"RMB",usageApi?(p.cost.input==null?"待填写":String(p.cost.input)):"—",usageApi?(p.cost.output==null?"待填写":String(p.cost.output)):"—",usageApi&&p.features.image_output?(p.cost.image_price==null?"待填写":String(p.cost.image_price)):"—",packageApi?(Number.isInteger(p.cost.package_token_limit)&&p.cost.package_token_limit>0?Number(p.cost.package_token_limit).toLocaleString("zh-CN"):"待填写"):"—",packageApi&&p.cost.package_overage_available?(p.cost.package_overage_input==null?"待填写":String(p.cost.package_overage_input)):"—",packageApi&&p.cost.package_overage_available?(p.cost.package_overage_output==null?"待填写":String(p.cost.package_overage_output)):"—"];
+  }
+  if(profileTab==="quality")return QUALITY_FIELDS.map(([k])=>qualityLabel(p.quality[k]));
+  return [p.domains.length?el("div",{style:"display:flex;gap:5px;flex-wrap:wrap"},p.domains.slice(0,3).map(x=>el("span",{class:"chip blue"},[x])).concat(p.domains.length>3?[el("span",{class:"chip gray"},[`+${p.domains.length-3}`])]:[])):el("span",{class:"muted"},["未配置"])];
+}
+function profileHeaders(){return profileTab==="features"?["文本输入","文本输出","图片输入","图片输出","工具调用","思考模式","上下文 Token","最大输出 Token"]:profileTab==="cost"?["计费类型","币种","输入价格/1M","输出价格/1M","图片生成价格/张","套餐 Token 额度上限（输入 + 输出）","超额输入价格/1M","超额输出价格/1M"]:profileTab==="quality"?QUALITY_FIELDS.map(x=>x[1]):["专业领域"];}
+function profileColumnValue(m,key){const x=nodeMeta(m),value=key==="node_name"?x.node_name:key==="provider"?m.provider:key==="model_series"?x.model_series:x.model_brand;return String(value||"-");}
+
+async function renderModelProfiles(){
+  const {models}=await UI.api("/v1/models");const box=content();box.innerHTML="";
+  const allModels=models||[],q=profileSearch.toLowerCase();
+  const list=allModels.filter(m=>{const x=nodeMeta(m);return (!q||`${m.model_name} ${x.node_name} ${m.provider} ${x.model_series} ${x.model_brand}`.toLowerCase().includes(q))&&Object.entries(profileFilters).every(([key,value])=>!value||profileColumnValue(m,key)===value);});
+  if(profileSort.key)list.sort((a,b)=>profileColumnValue(a,profileSort.key).localeCompare(profileColumnValue(b,profileSort.key),"zh-CN")*(profileSort.direction==="asc"?1:-1));
+  const incomplete=(models||[]).map(m=>({m,p:modelProfile(m)})).map(x=>({...x,tabs:profileMissingTabs(x.m,x.p)})).filter(x=>x.tabs.length);
+  const pendingTip=incomplete.length?incomplete.map(({m,tabs})=>`${m.model_name||m.model_id}：${tabs.join("、")}`).join("\n"):"所有模型画像均已完善";
+  const tabs=[["features","功能画像"],["cost","成本画像"],["quality","任务画像"],["domains","专业领域"]];
+  const search=el("input",{type:"text",value:profileSearch,placeholder:"搜索模型名称、节点名称、提供平台、系列或品牌",style:"max-width:360px"});search.onkeydown=e=>{if(e.key==="Enter"){profileSearch=search.value.trim();renderModelProfiles();}};
+  const filterHeader=(label,key)=>{
+    const values=[...new Set(allModels.map(m=>profileColumnValue(m,key)))].sort((a,b)=>a.localeCompare(b,"zh-CN"));
+    const active=profileSort.key===key,arrow=active?(profileSort.direction==="asc"?"↑":"↓"):"↕";
+    const sortButton=el("button",{type:"button",title:`按${label}${active&&profileSort.direction==="asc"?"降序":"升序"}排列`,"aria-label":`按${label}${active&&profileSort.direction==="asc"?"降序":"升序"}排列`,style:`display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:${active?"var(--primary)":"inherit"};font:inherit;font-weight:600;cursor:pointer`,onclick:()=>{profileSort=active?{key,direction:profileSort.direction==="asc"?"desc":"asc"}:{key,direction:"asc"};renderModelProfiles();}},[label,el("span",{style:"font-size:12px"},[arrow])]);
+    let filterButton;
+    filterButton=el("button",{type:"button",title:profileFilters[key]?`筛选${label}：${profileFilters[key]}`:`筛选${label}`,"aria-label":`筛选${label}`,style:`display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;background:transparent;color:${profileFilters[key]?"var(--primary)":"var(--text-muted)"};cursor:pointer`,onclick:e=>{e.stopPropagation();UI.menu(filterButton,[{label:`${!profileFilters[key]?"✓ ":""}全部`,onClick:()=>{profileFilters[key]="";renderModelProfiles();}},...values.map(value=>({label:`${profileFilters[key]===value?"✓ ":""}${value}`,onClick:()=>{profileFilters[key]=value;renderModelProfiles();}}))]);}},[UI.icon("chevron",11)]);
+    return el("th",{style:"white-space:nowrap"},[el("div",{style:"display:flex;align-items:center;gap:3px"},[sortButton,filterButton])]);
+  };
+  const actionSticky="position:sticky;right:0;background:var(--bg-elevated);border-left:1px solid var(--border);box-shadow:-6px 0 8px -8px rgba(15,23,42,.45)";
+  box.appendChild(el("div",{style:"display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap"},[
+    el("div",{style:"display:flex;gap:8px"},[el("span",{class:"chip blue"},[`全部模型 ${models.length}`]),el("span",{class:incomplete.length?"chip yellow":"chip green",style:"display:inline-flex;align-items:center"},[`待完善 ${incomplete.length}`,UI.help(pendingTip)])]),
+    el("div",{style:"display:flex;gap:8px"},[search,el("button",{class:"btn",onclick:()=>{profileSearch=search.value.trim();renderModelProfiles();}},["搜索"])])
+  ]));
+  box.appendChild(el("div",{class:"card"},[
+    el("div",{style:"display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px"},tabs.map(([k,label])=>el("button",{class:`btn small ${profileTab===k?"primary":"ghost"}`,onclick:()=>{profileTab=k;renderModelProfiles();}},[label]))),
+    el("div",{style:"overflow-x:auto;position:relative"},[el("table",{class:"data"},[
+      el("thead",{},[el("tr",{},[
+        el("th",{style:"white-space:nowrap"},["模型名称"]),filterHeader("节点名称","node_name"),filterHeader("API 提供平台","provider"),filterHeader("模型系列","model_series"),filterHeader("模型品牌","model_brand"),
+        ...profileHeaders().map(h=>el("th",{style:"white-space:nowrap"},[h])),el("th",{style:`${actionSticky};z-index:8;white-space:nowrap`},["操作"])
+      ])]),
+      el("tbody",{},list.map(m=>{const x=nodeMeta(m),p=modelProfile(m),status=profileStatus(p,m),source=p.source==="builtin"?"系统预置":p.source==="generic"?"通用默认":"用户修改";return el("tr",{},[
+        el("td",{class:"num",style:"font-weight:600;white-space:nowrap"},[m.model_name||m.model_id]),el("td",{},[x.node_name||"-"]),el("td",{},[m.provider||"-"]),el("td",{},[x.model_series||"-"]),el("td",{},[x.model_brand||"-"]),
+        ...profileGroupCells(p,m).map(v=>el("td",{style:"white-space:nowrap"},[v])),el("td",{style:`${actionSticky};z-index:4`},[el("button",{class:"btn small",onclick:()=>editModelProfile(m,profileTab)},["编辑"])])
+      ]);}))
+    ])])
+  ]));
+}
+
+function editModelProfile(m,tab){
+  const p=JSON.parse(JSON.stringify(modelProfile(m))),x=nodeMeta(m),body=el("div",{class:"form-loose"}),err=el("div",{class:"field-error"});
+  body.appendChild(el("div",{class:"drawer-meta"},[el("span",{},[m.model_name||m.model_id]),el("span",{class:"muted"},[m.provider||"-"]),el("span",{class:"muted"},[`${x.model_series} · ${x.model_brand}`])]));
+  const labeled=(label,node,hint="")=>el("label",{class:"field"},[el("span",{class:"label-text"},[label,hint?UI.help(hint):null]),node]);
+  const boolRow=(label,key)=>{const lab=el("span",{class:"muted"},[p.features[key]?"支持":"不支持"]);return el("div",{class:"field",style:"display:flex;align-items:center;justify-content:space-between"},[el("span",{class:"label-text"},[label]),UI.toggle({checked:p.features[key],label:p.features[key]?"支持":"不支持",onChange:v=>{p.features[key]=v;lab.textContent=v?"支持":"不支持";return true;}})]);};
+  if(tab==="features"){
+    [["文本输入","text_input"],["文本输出","text_output"],["图片输入","image"],["图片输出","image_output"],["工具调用","tool"],["思考模式","thinking"]].forEach(([a,b])=>body.appendChild(boolRow(a,b)));
+    [["最大上下文 Token","context"],["最大输出 Token","output"]].forEach(([label,key])=>{const n=el("input",{type:"number",min:"1",step:"1",value:p.features[key]||"",placeholder:"请输入 Token 数"});n.oninput=()=>p.features[key]=n.value?Number(n.value):null;body.appendChild(labeled(label,n));});
+  } else if(tab==="cost"){
+    const billingType=x.api_type,privateApi=billingType==="private",packageApi=billingType==="package";
+    body.appendChild(labeled("计费类型",el("input",{type:"text",value:billingTypeLabel(billingType),readonly:true,"aria-readonly":"true"}),"计费类型在模型接入页配置，此处不可修改"));
+    if(!privateApi&&!packageApi){
+      [["输入价格（RMB / 1M Token）","input"],["输出价格（RMB / 1M Token）","output"]].forEach(([label,key])=>{const n=el("input",{type:"number",min:"0",step:"0.01",value:p.cost[key]??"",placeholder:"请输入价格"});n.oninput=()=>p.cost[key]=n.value===""?null:Number(n.value);body.appendChild(labeled(label,n));});
+      if(p.features.image_output){const imagePrice=el("input",{type:"number",min:"0",step:"0.01",value:p.cost.image_price??"",placeholder:"请输入每张图片的生成价格"});imagePrice.oninput=()=>p.cost.image_price=imagePrice.value===""?null:Number(imagePrice.value);body.appendChild(labeled("图片生成价格（RMB / 张）",imagePrice,"仅支持图片输出的按使用量计费模型需要填写"));}
+    }else if(packageApi){
+      const quota=el("input",{type:"number",min:"1",step:"1",value:p.cost.package_token_limit??"",placeholder:"请输入套餐内 Token 总额度"});
+      quota.oninput=()=>p.cost.package_token_limit=quota.value===""?null:Number(quota.value);
+      body.appendChild(labeled("套餐 Token 额度上限（输入 + 输出）",quota,"按输入 Token 与输出 Token 的累计总量统计"));
+      const packageBox=el("div",{});
+      const drawPackage=()=>{packageBox.innerHTML="";if(p.cost.package_overage_available===true){
+        [["超额输入价格（RMB / 1M Token）","package_overage_input"],["超额输出价格（RMB / 1M Token）","package_overage_output"]].forEach(([label,key])=>{const n=el("input",{type:"number",min:"0",step:"0.01",value:p.cost[key]??"",placeholder:"请输入超额后的价格"});n.oninput=()=>p.cost[key]=n.value===""?null:Number(n.value);packageBox.appendChild(labeled(label,n));});
+      }};
+      const overageValue=p.cost.package_overage_available===true?"yes":p.cost.package_overage_available===false?"no":"";
+      const overage=el("select",{},[["","请选择"],["yes","可继续使用"],["no","不可继续使用"]].map(([v,t])=>el("option",{value:v,selected:overageValue===v},[t])));
+      overage.onchange=()=>{p.cost.package_overage_available=overage.value===""?null:overage.value==="yes";drawPackage();};
+      body.appendChild(labeled("超额后是否可继续使用",overage,"不可继续使用时，达到套餐额度后模型停止参与调用"));body.appendChild(packageBox);drawPackage();
+    }else{
+      p.cost.private_method="bought_out";p.cost.resource_billing=null;p.cost.monthly_fee=null;
+      body.appendChild(labeled("成本计费方式",el("input",{type:"text",value:"不计成本",readonly:true,"aria-readonly":"true"})));
+      body.appendChild(el("div",{class:"muted",style:"margin-top:-6px;line-height:1.8"},["不计成本：当作最便宜的模型处理。"]));
+    }
+  } else if(tab==="quality"){
+    QUALITY_FIELDS.forEach(([key,label])=>{const sel=el("select",{},QUALITY_LEVELS.map(([v,t])=>el("option",{value:String(v),selected:Number(p.quality[key])===v},[`${t}（${v}）`])));sel.onchange=()=>p.quality[key]=Number(sel.value);body.appendChild(labeled(label,sel));});
+  } else {
+    const selected=new Set(p.domains||[]),wrap=el("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
+    const draw=()=>{wrap.innerHTML="";DOMAIN_OPTIONS.concat([...selected].filter(d=>!DOMAIN_OPTIONS.includes(d))).forEach(d=>wrap.appendChild(el("button",{type:"button",class:`btn small ${selected.has(d)?"primary":""}`,title:DOMAIN_OPTIONS.includes(d)?"":"自定义领域；点击移除",onclick:()=>{selected.has(d)?selected.delete(d):selected.add(d);draw();}},[d])));};draw();
+    const custom=el("input",{type:"text",placeholder:"输入其它专业领域",maxlength:"20"});
+    const addCustom=el("button",{type:"button",class:"btn",onclick:()=>{const v=custom.value.trim();if(!v)return;if(selected.has(v)){UI.toast("该领域已经添加",true);return;}selected.add(v);custom.value="";draw();}},["添加"]);
+    body.append(labeled("专业领域（可多选）",wrap,"未配置不影响模型参与通用任务路由"),labeled("其它领域",el("div",{style:"display:flex;gap:8px"},[custom,addCustom])));p._selectedDomains=selected;
+  }
+  body.appendChild(err);
+  const foot=el("div",{style:"display:flex;gap:8px;align-items:center;width:100%"},[el("button",{class:"btn ghost",onclick:()=>{resetModelProfile(m.model_id);UI.toast(isMainstreamModel(m)?"已恢复系统内置默认值":"已恢复通用默认值");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},[isMainstreamModel(m)?"恢复系统默认值":"恢复通用默认值"]),el("div",{style:"flex:1"}),el("button",{class:"btn",onclick:()=>mask.querySelector(".close-btn")?.click()},["取消"]),el("button",{class:"btn primary",onclick:()=>{if(tab==="features"&&p.features.output&&p.features.context&&p.features.output>p.features.context){err.textContent="最大输出 Token 不能超过最大上下文 Token";return;}if(tab==="cost"){const billingType=x.api_type,packageApi=billingType==="package",usageApi=billingType!=="private"&&!packageApi;if(usageApi&&(p.cost.input==null||p.cost.output==null)){err.textContent="请填写输入价格和输出价格";return;}if(usageApi&&p.features.image_output&&p.cost.image_price==null){err.textContent="请填写图片生成价格";return;}if(packageApi&&(!Number.isInteger(p.cost.package_token_limit)||p.cost.package_token_limit<=0)){err.textContent="套餐 Token 额度上限必须为正整数";return;}if(packageApi&&p.cost.package_overage_available==null){err.textContent="请选择超额后是否可继续使用";return;}if(packageApi&&p.cost.package_overage_available&&(p.cost.package_overage_input==null||p.cost.package_overage_input<0||p.cost.package_overage_output==null||p.cost.package_overage_output<0)){err.textContent="请填写有效的超额输入价格和输出价格";return;}}if(tab==="domains")p.domains=[...p._selectedDomains];delete p._selectedDomains;persistModelProfile(m.model_id,p);UI.toast("模型画像已保存");mask.querySelector(".close-btn")?.click();renderModelProfiles();}},["保存"])]);
+  const titles={features:"功能画像",cost:"成本画像",quality:"任务画像",domains:"专业领域"};const mask=UI.drawer(`编辑${titles[tab]} · ${m.model_name||m.model_id}`,body,foot);
+}
+
+const RENDER = { models: renderModelNodes, dispatch: renderDispatch, profile: renderModelProfiles, apidoc: renderApiDocPage };
+// 走查深链：?register=1 直接打开添加节点；?policy=1 打开第一条策略的参数抽屉
+setTimeout(async () => {
+  const q = new URLSearchParams(location.search);
+  if (q.get("register")) modelNodeDialog();
+  if (q.get("policy")) {
+    try {
+      const [{ policies }, { models }] = await Promise.all([UI.api("/v1/policies"), UI.api("/v1/models")]);
+      const p0 = policies && policies[0];
+      if (p0) editPolicy({ ...p0, params: p0.params || {}, budget_cap: p0.budget_cap || {} },
+        (models || []).filter(m => m.status === "active"));
+    } catch (e) { UI.toast("打开参数抽屉失败：" + e.message, true); }
+  }
+}, 900);
+window.addEventListener("hashchange", () => showSection(location.hash.replace("#", "")));
+showSection(location.hash.replace("#", "") || "dispatch", true);
+</script>
+<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(function(){});</script>
+</body>
+</html>

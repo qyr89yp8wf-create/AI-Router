@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%231DA1F2'/%3E%3Crect x='10.5' y='3.6' width='9.6' height='7.3' rx='2.7' fill='none' stroke='%23fff' stroke-width='1.5' opacity='0.75'/%3E%3Cpath d='M3.4 12a3.7 3.7 0 0 1 3.7-3.7h6a3.7 3.7 0 0 1 3.7 3.7v2.3a3.7 3.7 0 0 1-3.7 3.7H9.5l-3.1 2.6c-.55.46-1.3.07-1.3-.64v-2.4A3.7 3.7 0 0 1 3.4 14.3z' fill='%23fff'/%3E%3Ccircle cx='7.4' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='10.25' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3Ccircle cx='13.1' cy='13.1' r='1.05' fill='%231DA1F2'/%3E%3C/svg%3E">
+<title>首页 · 模型路由平台</title>
+<link rel="stylesheet" href="./shared.css?v=13e2444d">
+<link rel="prefetch" href="./audit.html"><link rel="prefetch" href="./dashboard.html"><link rel="prefetch" href="./home-router.html"><link rel="prefetch" href="./playground.html"><link rel="prefetch" href="./router.html"><link rel="prefetch" href="./trace.html">
+<style>
+  .home { max-width: 900px; margin: 0 auto; padding-top: 6vh; text-align: center; }
+  .home .mark { display: inline-flex; margin-bottom: 14px; }
+  .home h1 { font-size: 32px; font-weight: 800; letter-spacing: 2px; margin: 0 0 12px; color: var(--text-primary); }
+  .home .slogan { font-size: 15px; color: var(--text-secondary); letter-spacing: 6px; margin: 0 0 36px; }
+  .stage { position: relative; height: 368px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius-card); overflow: hidden; text-align: left; box-shadow: var(--shadow-card); }
+  .stage * { box-sizing: border-box; }
+  .cs { position: absolute; inset: 0; display: none; }
+  .cs.active { display: block; }
+  .cs .inner { position: relative; max-width: 640px; height: 258px; margin: 0 auto; }
+  .rq { position: absolute; left: 50%; transform: translateX(-50%); top: 14px; background: var(--panel-deep); color: #fff;
+    font-size: 12.5px; padding: 7px 15px; border-radius: 999px; opacity: 0; white-space: nowrap; }
+  .cs.active .rq { animation: csIn .4s ease-out forwards; }
+  @keyframes csIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @keyframes csIn2 { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .mrow { position: absolute; left: 0; right: 0; top: 66px; display: flex; justify-content: center; gap: 18px; }
+  .rm { width: 140px; text-align: center; font-size: 12.5px; font-weight: 600; color: var(--text-primary); background: var(--bg-elevated);
+    border: 1px solid var(--border); border-radius: 10px; padding: 9px 8px 10px; opacity: 0; position: relative; }
+  .cs.active .rm { animation: csIn2 .4s ease-out .6s forwards; }
+  .cs.active .rm.d2 { animation-delay: .8s; }
+  .cs.active .rm.d3 { animation-delay: 1s; }
+  .rm .sc { height: 5px; border-radius: 999px; background: var(--bg-sunken); margin-top: 7px; overflow: hidden; position: relative; }
+  .rm .sc i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--primary); width: 0; }
+  .cs.active .rm .sc i { animation: csGrow .8s ease-out 1.4s forwards; }
+  @keyframes csGrow { to { width: var(--w); } }
+  .cs.active .rm.win { animation: csIn2 .4s ease-out .6s forwards, csWin .3s ease-out 2.3s forwards; }
+  @keyframes csWin { to { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-weak); } }
+  .rm .mprice { font-size: 10.5px; color: var(--text-muted); font-weight: 400; margin-top: 3px; }
+  .rm .flag { position: absolute; top: -9px; right: -6px; font-size: 10px; background: var(--danger, #E5484D); color: #fff;
+    border-radius: 999px; padding: 2px 8px; opacity: 0; }
+  .cs.active .flag { animation: csIn2 .3s ease-out 1.6s forwards; }
+  .cs.active .rm.dead { animation: csIn2 .4s ease-out .6s forwards, csDead .3s ease-out 1.8s forwards; }
+  @keyframes csDead { to { opacity: .45; border-style: dashed; } }
+  .cs.active .rm.save { animation: csIn2 .4s ease-out .8s forwards, csWin .3s ease-out 2.2s forwards; }
+  .agg { position: absolute; left: 50%; transform: translateX(-50%); top: 156px; font-size: 11.5px; color: var(--primary);
+    background: var(--primary-weak); border-radius: 999px; padding: 4px 13px; opacity: 0; white-space: nowrap; }
+  .cs.active .agg { animation: csIn .35s ease-out 2.6s forwards; }
+  .ans { position: absolute; left: 0; right: 0; top: 190px; background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 12px; border-bottom-left-radius: 4px; padding: 9px 13px; font-size: 12.5px; color: var(--text-secondary); opacity: 0; }
+  .cs.active .ans { animation: csIn2 .4s ease-out 3s forwards; }
+  .ans .rc { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  /* 权重滑块动效 */
+  .wtrack { position: absolute; left: 60px; right: 60px; top: 176px; height: 6px; border-radius: 999px; background: var(--bg-sunken); }
+  .wfill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--primary); width: 18%; }
+  .cs.active .wfill { animation: wMove 4.4s ease-in-out 1.2s forwards; }
+  @keyframes wMove { 0% { width: 18%; } 45%, 55% { width: 50%; } 100% { width: 84%; } }
+  .wthumb { position: absolute; top: -6px; left: 18%; width: 18px; height: 18px; border-radius: 999px; background: #fff;
+    border: 2px solid var(--primary); box-shadow: var(--shadow-card); margin-left: -9px; }
+  .cs.active .wthumb { animation: tMove 4.4s ease-in-out 1.2s forwards; }
+  @keyframes tMove { 0% { left: 18%; } 45%, 55% { left: 50%; } 100% { left: 84%; } }
+  .wlab { position: absolute; top: 198px; font-size: 11.5px; color: var(--text-muted); }
+  .wlab.l { left: 60px; } .wlab.r { right: 60px; }
+  .cs.active .rm.wa { animation: csIn2 .4s ease-out .5s forwards, wPickA 4.4s ease-in-out 1.2s forwards; }
+  .cs.active .rm.wb { animation: csIn2 .4s ease-out .7s forwards, wPickB 4.4s ease-in-out 1.2s forwards; }
+  @keyframes wPickA { 0%, 38% { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-weak); } 50%, 100% { border-color: var(--border); box-shadow: none; } }
+  @keyframes wPickB { 0%, 50% { border-color: var(--border); box-shadow: none; } 62%, 100% { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-weak); } }
+  .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 56px 12px; background: var(--bg-surface);
+    border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-secondary); opacity: 0; text-align: center; }
+  .cs.active .cap { animation: csIn2 .4s ease-out .2s forwards; }
+  .cap b { display: block; color: var(--text-primary); font-size: 13.5px; margin-bottom: 2px; }
+  .dots { position: absolute; right: 18px; bottom: 16px; display: flex; gap: 6px; z-index: 2; }
+  .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--border-strong, #C7D3DC); cursor: pointer; border: 0; padding: 0; transition: width .2s; }
+  .dot.on { background: var(--primary); width: 18px; }
+  .go { margin-top: 26px; }
+  .go .btn { font-size: 15px; padding: 11px 34px; border-radius: 12px; }
+  .sub-links { margin-top: 14px; font-size: var(--font-small); color: var(--text-muted); }
+  .sub-links a { color: var(--text-secondary); text-decoration: none; margin: 0 10px; }
+  .sub-links a:hover { color: var(--primary); }
+  .cross-link { display: inline-block; margin-top: 26px; color: var(--text-muted); text-decoration: none; font-size: var(--font-small); }
+  .cross-link:hover { color: var(--primary); }
+</style>
+</head>
+<body class="has-side">
+<div class="page">
+  <div class="home">
+    <span class="mark"><svg width="52" height="52" viewBox="0 0 24 24" fill="none"><rect x="10.5" y="3" width="10.5" height="8" rx="3" fill="none" stroke="var(--primary)" stroke-width="1.6" opacity="0.45"/><path d="M3 12a4 4 0 0 1 4-4h6.5a4 4 0 0 1 4 4v2.5a4 4 0 0 1-4 4H9.8l-3.4 2.9c-.6.5-1.4.1-1.4-.7v-2.6A4 4 0 0 1 3 14.5z" fill="var(--primary)"/><circle cx="7.6" cy="13.2" r="1.15" fill="#fff"/><circle cx="10.75" cy="13.2" r="1.15" fill="#fff"/><circle cx="13.9" cy="13.2" r="1.15" fill="#fff"/></svg></span>
+    <h1>模型路由平台</h1>
+    <p class="slogan">为每次对话选对模型</p>
+    <div class="stage">
+      <div class="cs">
+        <div class="inner">
+          <span class="rq">你好，帮我查下今天的靠泊计划</span>
+          <div class="mrow">
+            <div class="rm win"><span>迅答 Swift-4B</span><div class="mprice">¥0.1 / M</div><div class="sc"><i style="--w:88%"></i></div></div>
+            <div class="rm d2"><span>衡岳 Atlas-72B</span><div class="mprice">¥0.6 / M</div><div class="sc"><i style="--w:55%"></i></div></div>
+            <div class="rm d3"><span>沉思 Sage-R1</span><div class="mprice">¥1 / M</div><div class="sc"><i style="--w:34%"></i></div></div>
+          </div>
+          <div class="ans">今天有三个泊位计划作业，预计 14:00 起密集靠泊……<div class="rc">单模型直答 · 迅答 Swift-4B · ¥0.0002 · 0.4s</div></div>
+        </div>
+        <div class="cap"><b>单模型直答</b>简单问题走快车道，最合适的一个模型直接作答，省钱省时</div>
+      </div>
+      <div class="cs">
+        <div class="inner">
+          <span class="rq">铁矿石价格走势怎么看？</span>
+          <div class="mrow">
+            <div class="rm"><span>迅答 Swift-4B</span><div class="mprice">¥0.1 / M</div><div class="sc"><i style="--w:42%"></i></div></div>
+            <div class="rm d2 win"><span>沉思 Sage-R1</span><div class="mprice">¥1 / M</div><div class="sc"><i style="--w:84%"></i></div></div>
+            <div class="rm d3 win"><span>曜极 Nova-X</span><div class="mprice">¥3 / M</div><div class="sc"><i style="--w:80%"></i></div></div>
+          </div>
+          <div class="agg">两名得分接近 · 聚合定稿：由 沉思 Sage-R1 融合重写</div>
+          <div class="ans">近八周价格整体上行，建议关注供需两端边际变化……<div class="rc">聚合回答 · 2 路候选 · ¥0.0021 · 1.2s</div></div>
+        </div>
+        <div class="cap"><b>聚合回答</b>难题让多个模型都答一遍，聚合器融合成更好的一份</div>
+      </div>
+      <div class="cs">
+        <div class="inner">
+          <span class="rq">帮我总结本季度物流成本结构</span>
+          <div class="mrow">
+            <div class="rm dead"><span>曜极 Nova-X</span><div class="mprice">首选</div><span class="flag">超时</span></div>
+            <div class="rm d2 save"><span>衡岳 Atlas-72B</span><div class="mprice">默认兜底</div></div>
+          </div>
+          <div class="agg" style="animation-delay:2.2s">故障自动切换 · 兜底模型接管</div>
+          <div class="ans">本季度物流成本以运输与仓储为主，占比约七成……<div class="rc">兜底接管 · 衡岳 Atlas-72B · 用户无感切换</div></div>
+        </div>
+        <div class="cap"><b>故障兜底</b>首选模型超时或出错时自动切默认兜底，回答不中断</div>
+      </div>
+      <div class="cs">
+        <div class="inner">
+          <div class="mrow" style="top:36px">
+            <div class="rm wa" style="width:190px"><span>迅答 Swift-4B</span><div class="mprice">便宜 · ¥0.1 / M · 得分 0.65</div></div>
+            <div class="rm wb" style="width:190px"><span>沉思 Sage-R1</span><div class="mprice">更准 · ¥1 / M · 得分 0.84</div></div>
+          </div>
+          <div class="wtrack"><div class="wfill"></div><div class="wthumb"></div></div>
+          <span class="wlab l">更省钱</span><span class="wlab r">更高质量</span>
+        </div>
+        <div class="cap"><b>成本-效果权重</b>拖动策略的权重，路由在省钱与高质之间自动换挡</div>
+      </div>
+      <div class="cs">
+        <div class="inner">
+          <span class="rq">帮我算下这单的毛利率，再写一段分析</span>
+          <div class="mrow">
+            <div class="rm win" style="width:190px"><span>智能路由模型判维</span><div class="mprice">相关维度：数学推理 + 长文写作</div></div>
+            <div class="rm d2" style="width:190px"><span>沉思 Sage-R1 直答</span><div class="mprice">两维平均得分 × 成本，综合分领先</div></div>
+          </div>
+          <div class="agg" style="animation-delay:2.4s">得分缺失或与业务不符？画像页点格修正，即改即生效</div>
+          <div class="ans">画像 = benchmark 得分表 + 成本，零冷启动<div class="rc">智能判维 · 判定相关维度 → 平均得分 × 权重 → 路由</div></div>
+        </div>
+        <div class="cap"><b>智能判维路由</b>路由模型判定问题相关的 benchmark 维度，按维度平均得分选模型</div>
+      </div>
+      <div class="dots"><button class="dot on" aria-label="case 1"></button><button class="dot" aria-label="case 2"></button><button class="dot" aria-label="case 3"></button><button class="dot" aria-label="case 4"></button><button class="dot" aria-label="case 5"></button></div>
+    </div>
+    <div class="go"><a class="btn primary" href="./router.html#dispatch">进入模型路由决策</a></div>
+  </div>
+</div>
+
+<script>window.SIA_PLATFORM="router";</script>
+<script src="./mock_data.js?v=d70be8bd"></script>
+<script src="./mock_api.js?v=15b223fa"></script>
+<script src="./tokens.js?v=360e29ec"></script>
+<script src="./ui.js?v=ff5d6dcf"></script>
+<script>window.SIA_PLATFORM = window.SIA_PLATFORM || "router"; UI.nav("home");
+const CASES = 5;
+let cur = 0, timer = null;
+function show(i) {
+  cur = i;
+  document.querySelectorAll(".cs").forEach((n, idx) => {
+    n.classList.remove("active");
+    if (idx === i) { void n.offsetWidth; n.classList.add("active"); }
+  });
+  document.querySelectorAll(".dot").forEach((d, idx) => d.classList.toggle("on", idx === i));
+  clearTimeout(timer);
+  timer = setTimeout(() => show((cur + 1) % CASES), 7000);
+}
+document.querySelectorAll(".dot").forEach((d, idx) => d.onclick = () => show(idx));
+show(0);
+</script>
+<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(function(){});</script>
+</body>
+</html>
