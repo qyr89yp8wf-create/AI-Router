@@ -592,13 +592,17 @@
     if (polMeta.route_type === "manual") {
       const sourceModels=(D["/v1/models"]?.models||[]).filter(m=>m.status==="active"&&modelLocal.status[m.model_id]!=="disabled");
       const allowedIds=pol&&pol.model_whitelist&&pol.model_whitelist.length?pol.model_whitelist:sourceModels.map(m=>m.model_id);
-      const requested=((body&&body.answer_models)||[])[0]||(body&&body.manual_model);
+      const requestedAnswers=((body&&body.answer_models)||[]).filter(id=>allowedIds.includes(id));
+      const requested=requestedAnswers[0]||(body&&body.manual_model);
       const answerId=allowedIds.includes(requested)?requested:(allowedIds[0]||"swift-4b");
       const answer=sourceModels.find(m=>m.model_id===answerId)||{model_id:answerId,display_name:answerId};
       const aggReq=(body&&body.aggregate)||"auto";
       const effectiveAgg=aggReq==="auto"?polMeta.default_aggregation:aggReq;
       const useAgg=!!(polMeta.allow_aggregation&&effectiveAgg==="on"&&allowedIds.length>1);
-      const aggregatorId=useAgg?(allowedIds.find(id=>id!==answerId)||answerId):null;
+      const answer2Id=useAgg?(requestedAnswers.find(id=>id!==answerId)||allowedIds.find(id=>id!==answerId)||answerId):null;
+      const answer2=sourceModels.find(m=>m.model_id===answer2Id)||{model_id:answer2Id,display_name:answer2Id};
+      const requestedAggregator=body&&body.aggregator_model;
+      const aggregatorId=useAgg?(allowedIds.includes(requestedAggregator)?requestedAggregator:(allowedIds[0]||answerId)):null;
       const aggregator=sourceModels.find(m=>m.model_id===aggregatorId)||{model_id:aggregatorId,display_name:aggregatorId};
       const steps=[
         {step:"manual_select",text:`手动路由：终端用户选择回答模型 ${answer.display_name||answer.model_id}`},
@@ -606,11 +610,11 @@
         {step:useAgg?"switch":"fastlane",text:useAgg?`聚合模型：${aggregator.display_name||aggregator.model_id}`:`回答模型：${answer.display_name||answer.model_id}`},
         {step:"final",trace_id:"demo-trace",turn_id:"t-"+Math.random().toString(36).slice(2,8),
           content:"可以从问题目标、现有条件和执行步骤三个方面展开处理。",
-          decision_summary:{mode:"manual",switch_result:useAgg?"aggregated":"manual",final_model:answerId,candidates:[answerId],
+          decision_summary:{mode:"manual",switch_result:useAgg?"aggregated":"manual",final_model:answerId,candidates:useAgg?[answerId,answer2Id]:[answerId],answer_models:useAgg?[answerId,answer2Id]:[answerId],
             aggregator:aggregatorId,dimensions:[],total_cost:useAgg?0.0018:0.0004,total_latency_ms:useAgg?920:460,
             aggregation_default:polMeta.default_aggregation,aggregate_override:aggReq!=="auto"?aggReq:null,
-            model_calls:[{model_id:answerId,tokens_in:90,tokens_out:160,tokens_thinking:0,cost:0.0004,latency_ms:460}],policy:polMeta},
-          usage:{cost:useAgg?0.0018:0.0004,tokens:250}},
+            model_calls:[{model_id:answerId,role:"answer",tokens_in:90,tokens_out:160,tokens_thinking:0,cost:0.0004,latency_ms:460},...(useAgg?[{model_id:answer2Id,role:"answer",tokens_in:90,tokens_out:145,tokens_thinking:24,cost:0.0004,latency_ms:510},{model_id:aggregatorId,role:"aggregator",tokens_in:420,tokens_out:180,tokens_thinking:30,cost:0.0010,latency_ms:920}]:[])],policy:polMeta},
+          usage:{cost:useAgg?0.0018:0.0004,tokens:useAgg?1139:250}},
       ];
       return sseStream(steps,380);
     }

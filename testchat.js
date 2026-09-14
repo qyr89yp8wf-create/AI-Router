@@ -33,7 +33,7 @@ window.TestChat = (function () {
 
     // 调用方式选择：自绘分组下拉（调度策略 / 多模型 / 指定模型），不用系统默认 select
     const pickState = { kind: "policy", value: null, label: "加载中……" };
-    const routeUiState = { apiId: null, costAlpha: 0.5 };
+    const routeUiState = { apiId: null, costAlpha: 0.5, models: [], answer1: null, answer2: null, aggregator: null };
     let pickGroups = [];
     const pickLab = el("span", { class: "fsel-label" }, [pickState.label]);
     const modelSel = el("button", { class: "fsel tc-pick", type: "button", "aria-label": "选择调用方式" }, [pickLab, el("span", { class: "fsel-caret" }, [UI.icon("chevron", 13)])]);
@@ -47,6 +47,7 @@ window.TestChat = (function () {
             const sid = String(parseInt(hex, 16) % 1000000).padStart(6, "0");
             return { kind: "policy", value: p.policy_id, label: p.name || p.policy_id,
               route_api_id: p.route_api_id || "route-api-default", route_api_name: p.route_api_name || "默认路由 API",
+              route_type: p.route_type || (p.params || {}).route_type || "smart", model_whitelist: p.model_whitelist || [],
               allow_aggregation: !!p.allow_aggregation,
               alpha: (p.params || {}).alpha ?? 0.5, allow_cost_preference: (p.params || {}).allow_cost_effect_preference !== false,
               allow_agg_override: (p.params || {}).allow_agg_override !== false && (p.params || {}).allow_agg_override !== 0,
@@ -55,6 +56,7 @@ window.TestChat = (function () {
           { label: "多模型", items: [{ kind: "multi", value: null, label: "多模型回答 + 择优" }] },
           { label: "指定模型", items: actives.map(m => ({ kind: "model", value: m.model_id, label: m.display_name })) },
         ];
+        routeUiState.models = actives;
         const preset = opts.model && actives.find(m => m.model_id === opts.model);
         if (preset) setPick("model", preset.model_id, preset.display_name);
         else if (pickGroups[0].items.length) {
@@ -114,6 +116,11 @@ window.TestChat = (function () {
       const syncAggregation = (policy) => {
         aggState.value = policy && policy.allow_aggregation ? policy.default_aggregation : "off";
         routeUiState.costAlpha = policy ? policy.alpha : 0.5;
+        const allowed = policy && policy.model_whitelist && policy.model_whitelist.length ? policy.model_whitelist : routeUiState.models.map(m => m.model_id);
+        const usable = routeUiState.models.filter(m => allowed.includes(m.model_id));
+        if (!usable.some(m => m.model_id === routeUiState.answer1)) routeUiState.answer1 = usable[0]?.model_id || null;
+        if (!usable.some(m => m.model_id === routeUiState.answer2) || routeUiState.answer2 === routeUiState.answer1) routeUiState.answer2 = usable.find(m => m.model_id !== routeUiState.answer1)?.model_id || null;
+        if (!usable.some(m => m.model_id === routeUiState.aggregator)) routeUiState.aggregator = usable[0]?.model_id || null;
       };
       const routeApis=[...new Map(policies2.map(it=>[it.route_api_id,{id:it.route_api_id,name:it.route_api_name}])).values()];
       if(!routeUiState.apiId||!routeApis.some(api=>api.id===routeUiState.apiId))routeUiState.apiId=routeApis[0].id;
@@ -137,7 +144,56 @@ window.TestChat = (function () {
       costRange.oninput=()=>{routeUiState.costAlpha=levels[Number(costRange.value)];costValue.textContent=String(routeUiState.costAlpha);};
       if(activePolicy?.allow_cost_preference)modeBar.appendChild(control("成本—效果偏好",el("div",{class:"tc-cost-axis"},[el("span",{class:"muted"},["省钱"]),costRange,el("span",{class:"muted"},["质量"]),costValue])));
       if(activePolicy?.allow_aggregation&&activePolicy?.allow_agg_override)modeBar.appendChild(control("聚合参数",UI.fancySelect({ value: aggState.value, width: "130px",
-        options: [["on", "打开聚合"], ["off", "关闭聚合"]],onChange: (v) => { aggState.value = v; } })));
+        options: [["on", "打开聚合"], ["off", "关闭聚合"]],onChange: (v) => { aggState.value = v; drawModeBar(); } })));
+      if(activePolicy?.route_type === "manual") {
+        const allowedIds = activePolicy.model_whitelist?.length ? activePolicy.model_whitelist : routeUiState.models.map(m => m.model_id);
+        const usable = routeUiState.models.filter(m => allowedIds.includes(m.model_id));
+        if (!usable.some(m => m.model_id === routeUiState.answer1)) routeUiState.answer1 = usable[0]?.model_id || null;
+        const useAggregation = aggState.value === "on" && activePolicy.allow_aggregation;
+        if (useAggregation) {
+          if (!usable.some(m => m.model_id === routeUiState.answer2) || routeUiState.answer2 === routeUiState.answer1) routeUiState.answer2 = usable.find(m => m.model_id !== routeUiState.answer1)?.model_id || null;
+          if (!usable.some(m => m.model_id === routeUiState.aggregator)) routeUiState.aggregator = usable[0]?.model_id || null;
+        }
+        const nameOf = id => (usable.find(m => m.model_id === id) || {}).display_name || id || "请选择";
+        const summary = useAggregation ? `${nameOf(routeUiState.answer1)}、${nameOf(routeUiState.answer2)} → ${nameOf(routeUiState.aggregator)}` : nameOf(routeUiState.answer1);
+        const lab = el("span", {class:"fsel-label"}, [summary]);
+        const picker = el("button", {class:"fsel tc-role-picker",type:"button"}, [lab,el("span",{class:"fsel-caret"},[UI.icon("chevron",13)])]);
+        picker.onclick = () => {
+          document.querySelectorAll(".menu-pop").forEach(n => n.remove());
+          const pop = el("div", {class:`menu-pop tc-role-pop ${useAggregation?"is-aggregate":"is-single"}`});
+          const roleColumn = (title, key, excluded = []) => el("div", {class:"tc-role-column"}, [
+            el("div", {class:"tc-role-title"}, [title]),
+            ...usable.filter(m=>!excluded.includes(m.model_id)).map(m=>el("button",{class:`menu-item ${routeUiState[key]===m.model_id?"on":""}`,type:"button",onclick:e=>{
+              e.stopPropagation(); routeUiState[key]=m.model_id;
+              if(key==="answer1"&&routeUiState.answer2===m.model_id)routeUiState.answer2=usable.find(x=>x.model_id!==m.model_id)?.model_id||null;
+              if(key==="answer2"&&routeUiState.answer1===m.model_id)routeUiState.answer1=usable.find(x=>x.model_id!==m.model_id)?.model_id||null;
+              pop.remove(); drawModeBar(); setTimeout(()=>modeBar.querySelector(".tc-role-picker")?.click(),0);
+            }},[m.display_name||m.model_name||m.model_id]))
+          ]);
+          const answerCard = () => {
+            const selected = [routeUiState.answer1, routeUiState.answer2].filter(Boolean);
+            return el("div",{class:"tc-role-column tc-answer-multi"},[
+              el("div",{class:"tc-role-title"},["回答模型",el("span",{class:"tc-role-count"},[`${selected.length}/2`])]),
+              ...usable.map(m=>{const checked=selected.includes(m.model_id);return el("button",{class:`menu-item ${checked?"on":""}`,type:"button",onclick:e=>{
+                e.stopPropagation();
+                if(checked){UI.toast("聚合必须选择 2 个回答模型",true);return;}
+                if(selected.length>=2){routeUiState.answer1=routeUiState.answer2;routeUiState.answer2=m.model_id;}
+                else routeUiState.answer2=m.model_id;
+                pop.remove();drawModeBar();setTimeout(()=>modeBar.querySelector(".tc-role-picker")?.click(),0);
+              }},[el("span",{class:`tc-multi-check ${checked?"on":""}`},[checked?"✓":""]),m.display_name||m.model_name||m.model_id]);})
+            ]);
+          };
+          pop.appendChild(useAggregation
+            ? el("div",{class:"tc-role-grid"},[answerCard(),roleColumn("聚合模型","aggregator")])
+            : roleColumn("回答模型","answer1"));
+          if(useAggregation)pop.appendChild(el("div",{class:"tc-role-tip"},["两个模型分别生成回答，由一个聚合模型融合输出。"]));
+          document.body.appendChild(pop);
+          const r=picker.getBoundingClientRect(); pop.style.top=(r.top+window.scrollY-pop.offsetHeight-6)+"px"; pop.style.left=Math.max(12,Math.min(r.left+window.scrollX,window.innerWidth-pop.offsetWidth-12))+"px";
+          const close=e=>{if(!pop.contains(e.target)&&e.target!==picker){pop.remove();document.removeEventListener("click",close,true);}};
+          setTimeout(()=>document.addEventListener("click",close,true),0);
+        };
+        modeBar.appendChild(control("指定模型",picker,"tc-model-assignment"));
+      }
     }
     const composer = el("div", { class: "tc-composer" }, [opts.mountEl ? null : modelSel, input, sendBtn]);
     // 两种宿主：默认右侧抽屉；opts.mountEl 提供容器则渲染为页面内对话区（独立测试页用）
@@ -189,6 +245,12 @@ window.TestChat = (function () {
 
     async function send(text, cardContext, o = {}) {
       if (busy || !text) return;
+      const currentPolicy = (pickGroups.find(g => g.items?.some(it => it.value === pickState.value))?.items || []).find(it => it.value === pickState.value);
+      if (currentPolicy?.route_type === "manual" && aggState.value === "on") {
+        const answers = [routeUiState.answer1, routeUiState.answer2].filter(Boolean);
+        if (new Set(answers).size !== 2) { UI.toast("请先指定 2 个不同的回答模型", true); return; }
+        if (!routeUiState.aggregator) { UI.toast("请先指定聚合模型", true); return; }
+      }
       busy = true; renderSendBtn(); modelSel.disabled = true;
       const isReal = !cardContext && !o.silent;
       if (isReal) { userMsg(text); lastQuestion = text; }
@@ -228,7 +290,9 @@ window.TestChat = (function () {
             mode: pickedMode(), manual_model: pickState.kind === "model" ? pickState.value : null,
             aggregate: opts.keepReasoning ? aggState.value : undefined,
             cost_effect_alpha: opts.keepReasoning ? routeUiState.costAlpha : undefined,
-            policy_id: pickedPolicy() }),
+            policy_id: pickedPolicy(),
+            answer_models: pickState.kind === "policy" ? [routeUiState.answer1, routeUiState.answer2].filter(Boolean) : undefined,
+            aggregator_model: pickState.kind === "policy" ? routeUiState.aggregator : undefined }),
         });
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
